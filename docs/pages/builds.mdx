@@ -1,0 +1,35 @@
+import { Cards } from 'nextra/components'
+
+# Builds
+
+# Nixpacks
+
+Prezel relies on Nixpacks for the build step in most of the cases. You can refer to their documentation here:
+
+<Cards>
+<Cards.Card
+  title="Nixpacks docs"
+  href="https://nixpacks.com"
+  arrow
+/>
+</Cards>
+
+To customize the build process, you can add a `nixpacks.toml` file in the root folder.
+You can find more information about the available options [here](https://nixpacks.com/docs/configuration/file).
+
+The exception are static sites, whose support in the Nixpacks ecosystem falls a bit behind.
+
+I need to explain the cases where a static output will be detected
+
+# Base path?
+
+# Monorepo?
+
+import { FileTree } from 'nextra/components'
+
+<FileTree>
+  <FileTree.Folder name="app folder" defaultOpen>
+    <FileTree.Folder name="backend" />
+    <FileTree.Folder name="frontend" />
+  </FileTree.Folder>
+</FileTree>

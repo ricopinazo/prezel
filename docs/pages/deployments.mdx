@@ -1,0 +1,47 @@
+# Deployments
+
+Deployments are the smallest execution units in Prezel.
+
+## Visibility
+
+Deployments can be public or private. If a deployment is private, you will need to authenticate in order to access. There are two alternatives here.
+
+If you are using [prezel.app](prezel.app), this will be automatically handled for you.
+As long as you are logged in in the console, you will be able to access your private deployments.
+If you are not, you will be redirected to the console to log in.
+
+If you are not using the console, you will need to make sure to store a cookie where:
+- The key is the the hostname of your server
+- The value is the API key assigned to your server
+
+By default, all deployments coming from the default branch of a repository (normally `main`), are public,
+and all deployments produced by pull requests are private.
+
+## Lifecycle
+
+## Preview deployments
+
+Preview deployments are created every time a PR is raised in your setup repository
+!! what happens with dockerhub and the templates?
+They are private by default
+
+
+## Production deployments
+
+## Configuring deployments with `prezel.json`
+
+A `prezel.json` file placed in the root of your repository allows you to overwrite the default behavior for the deployment.
+
+### Visibility
+
+**Type**: `string`
+
+**Default value**: `"standard"`
+
+This field can be used to change the visibility of the deployment
+
+```json filename="prezel.json" copy
+{
+  "visibility": "standard"
+}
+```

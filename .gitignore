@@ -1,0 +1,9 @@
+.cargo
+*.db
+*.pem
+.env
+target
+.DS_Store
+docs/node_modules
+docs/.next
+docs/next-env.d.ts
