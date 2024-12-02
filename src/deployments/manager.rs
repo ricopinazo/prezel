@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Duration};
 use futures::{stream, StreamExt};
 use tokio::sync::{RwLock, RwLockReadGuard};
 
-use crate::{container::Container, db::Db, github::Github};
+use crate::{container::Container, db::Db, github::Github, tls::CertificateStore};
 
 use super::{
     deployment::Deployment,
@@ -30,8 +30,13 @@ pub(crate) struct Manager {
 // - build worker
 
 impl Manager {
-    pub(crate) fn new(box_domain: String, github: Github, db: Db) -> Self {
-        let deployments: Arc<_> = RwLock::new(Default::default()).into();
+    pub(crate) fn new(
+        box_domain: String,
+        github: Github,
+        db: Db,
+        certificates: CertificateStore,
+    ) -> Self {
+        let deployments: Arc<_> = RwLock::new(DeploymentMap::new(certificates)).into();
 
         // TODO: add docker or clean worker and trigger it at the end of the deployment worker flow
 

@@ -6,13 +6,13 @@ use http::{header, Response, StatusCode};
 use hyper::body::Bytes;
 use pingora::apps::http_app::ServeHttp;
 use pingora::http::ResponseHeader;
-use pingora::listeners::{TlsAccept, TlsSettings};
+use pingora::listeners::TlsSettings;
 use pingora::prelude::http_proxy_service;
 use pingora::prelude::{HttpPeer, ProxyHttp, Result, Session};
 use pingora::protocols::http::ServerSession;
 use pingora::server::Server;
 use pingora::services::listening::Service;
-use pingora::tls::{self, ssl};
+use pingora::tls::ssl::{NameType, SniError, SslContext, SslFiletype, SslMethod};
 use pingora::ErrorType::Custom;
 use pingora::{Error, ErrorSource};
 use url::Url;
@@ -23,7 +23,7 @@ use crate::deployments::manager::Manager;
 use crate::listener::{Access, Listener};
 use crate::logging::{Level, RequestLog, RequestLogger};
 use crate::time::now;
-use crate::tls::certificate::TlsCertificate;
+use crate::tls::{CertificateStore, TlsState};
 
 struct ApiListener;
 
@@ -232,37 +232,70 @@ fn logging(session: &Session, ctx: &RequestCtx, logger: &RequestLogger) -> Optio
     Some(())
 }
 
-struct TlsCallback {
-    certificate: TlsCertificate,
-}
+// struct TlsCallback {
+//     certificate: TlsCertificate,
+// }
 
-#[async_trait]
-impl TlsAccept for TlsCallback {
-    async fn certificate_callback(&self, ssl: &mut ssl::SslRef) {
-        tls::ext::ssl_use_certificate(ssl, &self.certificate.cert).unwrap();
-        tls::ext::ssl_use_private_key(ssl, &self.certificate.key).unwrap();
-    }
-}
+// #[async_trait]
+// impl TlsAccept for TlsCallback {
+//     async fn certificate_callback(&self, ssl: &mut ssl::SslRef) {
+//         tls::ext::ssl_use_certificate(ssl, &self.certificate.cert).unwrap();
+//         tls::ext::ssl_use_private_key(ssl, &self.certificate.key).unwrap();
 
-struct HttpHandler;
+//         //maybe this is enough
+//         // let servername = ssl.servername(NameType::HOST_NAME);
+
+//         // ssl.set_certificate(cert)?;
+//         // ssl.set_private_key(cert)?;
+//     }
+// }
+
+struct HttpHandler {
+    pub(crate) certificates: CertificateStore,
+}
 
 #[async_trait]
 impl ServeHttp for HttpHandler {
     async fn response(&self, session: &mut ServerSession) -> Response<Vec<u8>> {
-        if let Some(host) = session.req_header().uri.host() {
+        // if let Some(host) = session.req_header().uri.host() { // FIXME: maybe I should check both?
+        if let Some(Ok(host)) = session
+            .get_header(header::HOST)
+            .map(|header| header.to_str())
+        {
             // println!("redirecting HTTP query to {host}");
             let path = session.req_header().uri.path();
-
-            let body = "<html><body>301 Moved Permanently</body></html>"
-                .as_bytes()
-                .to_owned();
-            Response::builder()
-                .status(StatusCode::MOVED_PERMANENTLY)
-                .header(header::CONTENT_TYPE, "text/html")
-                .header(header::CONTENT_LENGTH, body.len())
-                .header(header::LOCATION, format!("https://{host}{path}"))
-                .body(body)
-                .unwrap()
+            if let Some(TlsState::Challenge {
+                challenge_file,
+                challenge_content,
+            }) = self.certificates.get_domain(host)
+            {
+                if path == format!("/.well-known/acme-challenge/{challenge_file}") {
+                    dbg!("challenge path");
+                    let content_length = challenge_content.len();
+                    Response::builder()
+                        .status(StatusCode::OK)
+                        .header(header::CONTENT_TYPE, "text/plain")
+                        .header(header::CONTENT_LENGTH, content_length)
+                        .body(challenge_content.into())
+                        .unwrap()
+                } else {
+                    Response::builder()
+                        .status(StatusCode::NOT_FOUND)
+                        .body("".into()) // should I set the content length?
+                        .unwrap()
+                }
+            } else {
+                let body = "<html><body>301 Moved Permanently</body></html>"
+                    .as_bytes()
+                    .to_owned();
+                Response::builder()
+                    .status(StatusCode::MOVED_PERMANENTLY)
+                    .header(header::CONTENT_TYPE, "text/html")
+                    .header(header::CONTENT_LENGTH, body.len())
+                    .header(header::LOCATION, format!("https://{host}{path}"))
+                    .body(body)
+                    .unwrap()
+            }
         } else {
             Response::builder()
                 .status(StatusCode::NOT_FOUND)
@@ -272,7 +305,7 @@ impl ServeHttp for HttpHandler {
     }
 }
 
-pub(crate) fn run_proxy(manager: Manager, config: Conf, certificate: TlsCertificate) {
+pub(crate) fn run_proxy(manager: Manager, config: Conf, store: CertificateStore) {
     let request_logger = RequestLogger::new();
     let mut server = Server::new(None).unwrap();
     server.bootstrap();
@@ -282,17 +315,63 @@ pub(crate) fn run_proxy(manager: Manager, config: Conf, certificate: TlsCertific
         request_logger,
     };
     let mut https_service = http_proxy_service(&server.configuration, proxy_app);
-    let tls_callback = Box::new(TlsCallback { certificate });
-    let tls_settings = TlsSettings::with_callbacks(tls_callback).unwrap();
+    let certificate = store.get_default_certificate();
+    // let tls_callback = Box::new(TlsCallback { certificate });
+    // let mut tls_settings = TlsSettings::with_callbacks(tls_callback).unwrap();
+    let mut tls_settings = TlsSettings::intermediate(&certificate.cert, &certificate.key).unwrap();
+
+    // TODO: tls_settings.add_extra_chain_cert(cert) !!!!!!!!!!!!!!!!!!!!!!
+    // TODO: tls_settings.enable_h2();
+
+    let cloned = store.clone();
+    tls_settings.set_servername_callback(move |ssl, alert| {
+        let domain = ssl.servername(NameType::HOST_NAME);
+        dbg!(domain);
+        if let Some(domain) = domain {
+            dbg!(cloned.get_domain(domain));
+            if let Some(TlsState::Ready(certificate)) = cloned.get_domain(domain) {
+                // ssl.set_certificate(&certificate.cert); // this does not seem to work
+                // ssl.set_private_key(&certificate.key);
+                dbg!();
+                let mut ctx = SslContext::builder(SslMethod::tls()).unwrap();
+                ctx.set_certificate_chain_file(&certificate.cert).unwrap();
+                ctx.set_private_key_file(&certificate.key, SslFiletype::PEM)
+                    .unwrap();
+                // ctx.set_alpn_select_callback(prefer_h2);
+                let built = ctx.build();
+                ssl.set_ssl_context(&built)
+                    .map_err(|_| SniError::ALERT_FATAL)?;
+            }
+        }
+
+        Ok(())
+    });
+
     https_service.add_tls_with_settings("0.0.0.0:443", None, tls_settings);
     server.add_service(https_service);
 
     let mut http_service = Service::new(
         "HTTP service".to_string(), // TODO: review this name ?
-        HttpHandler,
+        HttpHandler {
+            certificates: store,
+        },
     );
     http_service.add_tcp("0.0.0.0:80");
     server.add_service(http_service);
 
     server.run_forever();
+}
+
+// TODO: remove
+fn create_ssl_context(
+    cert_path: &str,
+    key_path: &str,
+) -> Result<SslContext, Box<dyn std::error::Error>> {
+    let mut ctx = SslContext::builder(SslMethod::tls())?;
+
+    ctx.set_certificate_chain_file(cert_path)?;
+    ctx.set_private_key_file(key_path, SslFiletype::PEM)?;
+    // ctx.set_alpn_select_callback(prefer_h2); // TODO: review if this is important
+    let built = ctx.build();
+    Ok(built)
 }

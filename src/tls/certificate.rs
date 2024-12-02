@@ -1,66 +1,67 @@
-use std::{fs, path::PathBuf};
+use std::{
+    fs::{self, create_dir_all},
+    path::PathBuf,
+};
 
-use log::info;
 use pingora::tls;
-use serde::{Deserialize, Serialize};
 
 use crate::paths::get_container_root;
 
 #[derive(Debug, Clone)]
 pub(crate) struct TlsCertificate {
-    pub(crate) cert: tls::x509::X509,
-    pub(crate) key: tls::pkey::PKey<tls::pkey::Private>,
-    pub(crate) hostname: String,
+    pub(crate) domain: String,
+    pub(crate) cert: String,
+    pub(crate) key: String,
 }
 
-#[derive(Serialize, Deserialize)]
-struct StoredTlsCertificate {
-    pub(crate) cert: Vec<u8>,
-    pub(crate) key: Vec<u8>,
-    pub(crate) hostname: String,
-}
+impl TlsCertificate {
+    pub(crate) fn load_from_disk(domain: String) -> anyhow::Result<Self> {
+        let cert = get_cert_path(&domain);
+        tls::x509::X509::from_pem(&fs::read(&cert)?)?;
 
-impl Serialize for TlsCertificate {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let credentials = StoredTlsCertificate {
-            cert: self.cert.to_pem().unwrap(),
-            key: self.key.private_key_to_der().unwrap(),
-            hostname: self.hostname.to_owned(),
-        };
-        credentials.serialize(serializer)
-    }
-}
+        let key = get_key_path(&domain);
+        tls::pkey::PKey::private_key_from_pem(&fs::read(&key)?)?;
 
-impl<'de> Deserialize<'de> for TlsCertificate {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let credentials = StoredTlsCertificate::deserialize(deserializer)?;
         Ok(Self {
-            cert: tls::x509::X509::from_pem(&credentials.cert).unwrap(),
-            key: tls::pkey::PKey::private_key_from_der(&credentials.key).unwrap(),
-            hostname: credentials.hostname,
+            domain,
+            cert: cert.to_str().unwrap().to_owned(),
+            key: key.to_str().unwrap().to_owned(),
         })
     }
+
+    // pub(crate) fn write_to_disk(&self) -> anyhow::Result<()> {
+    //     let cert = self.cert.to_pem()?;
+    //     fs::write(get_cert_path(&self.domain), cert)?;
+
+    //     let key = self.key.private_key_to_pem_pkcs8()?;
+    //     fs::write(get_key_path(&self.domain), key)?;
+
+    //     Ok(())
+    // }
 }
 
-fn certificate_path() -> PathBuf {
-    get_container_root().join("acme-credentials")
+pub(crate) fn write_certificate_to_disk(
+    domain: &str,
+    cert: tls::x509::X509,
+    key: tls::pkey::PKey<tls::pkey::Private>,
+) -> anyhow::Result<()> {
+    fs::write(get_cert_path(domain), cert.to_pem()?)?;
+    fs::write(get_key_path(domain), key.private_key_to_pem_pkcs8()?)?;
+    Ok(())
 }
 
-pub(crate) fn read_stored_certificate() -> Option<TlsCertificate> {
-    info!("reading stored certificate");
-    let bytes = fs::read(certificate_path()).ok()?;
-    bincode::deserialize(&bytes).ok()
+fn get_cert_path(domain: &str) -> PathBuf {
+    get_domain_path(domain).join("cert.pem")
 }
 
-pub(crate) fn persist_certificate(certificate: &TlsCertificate) {
-    let bytes = bincode::serialize(certificate).unwrap();
-    fs::write(certificate_path(), &bytes).unwrap();
+fn get_key_path(domain: &str) -> PathBuf {
+    get_domain_path(domain).join("key.pem")
+}
+
+fn get_domain_path(domain: &str) -> PathBuf {
+    let path = get_container_root().join("certs").join(domain);
+    create_dir_all(&path).unwrap();
+    path
 }
 
 #[cfg(test)]

@@ -4,8 +4,7 @@ use db::Db;
 use deployments::manager::Manager;
 use github::Github;
 use proxy::run_proxy;
-use tls::get_or_generate_tls_certificate;
-use tracing::info;
+use tls::CertificateStore;
 use tracing_subscriber::{
     layer::{Filter, SubscriberExt},
     util::SubscriberInitExt,
@@ -72,17 +71,20 @@ async fn main() {
     let db = Db::setup().await;
     let github = Github::new().await;
 
-    let manager = Manager::new(conf.hostname.clone(), github.clone(), db.clone());
+    let certificates = CertificateStore::load(&conf).await;
+    let manager = Manager::new(
+        conf.hostname.clone(),
+        github.clone(),
+        db.clone(),
+        certificates.clone(),
+    );
     let cloned_manager = manager.clone();
 
-    let api_hostname = format!("api.{}", &conf.hostname);
-
-    let tls_certificate = get_or_generate_tls_certificate(&conf).await;
-
-    tokio::task::spawn_blocking(|| run_proxy(cloned_manager, cloned_conf, tls_certificate));
+    tokio::task::spawn_blocking(|| run_proxy(cloned_manager, cloned_conf, certificates));
 
     manager.full_sync_with_github().await;
 
+    let api_hostname = format!("api.{}", &conf.hostname);
     run_api_server(manager, db, github, &api_hostname, conf.coordinator)
         .await
         .unwrap();

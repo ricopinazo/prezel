@@ -9,11 +9,12 @@ use crate::{
     container::{Container, ContainerStatus},
     db::{BuildResult, Db},
     github::Github,
+    tls::CertificateStore,
 };
 
 use super::{deployment::Deployment, worker::WorkerHandle};
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub(crate) struct DeploymentMap {
     /// FIXME: this having a tuple (i64, String) as the key means every time I access I need to clone a String. There has to be another way
     pub(crate) deployments: HashMap<(i64, String), Deployment>,
@@ -21,10 +22,20 @@ pub(crate) struct DeploymentMap {
     pub(crate) prod: HashMap<i64, String>,
     // pub(crate) ideal_prod: HashMap<i64, Option<String>>,
     pub(crate) names: HashMap<String, i64>,
+    pub(crate) certificates: CertificateStore,
     pub(crate) custom_domains: HashMap<String, i64>,
 }
 
 impl DeploymentMap {
+    pub(crate) fn new(store: CertificateStore) -> Self {
+        Self {
+            deployments: Default::default(),
+            prod: Default::default(),
+            names: Default::default(),
+            custom_domains: Default::default(),
+            certificates: store,
+        }
+    }
     pub(crate) fn iter_containers(&self) -> impl Iterator<Item = Arc<Container>> + '_ {
         self.deployments.iter().flat_map(|(_, deployment)| {
             [
@@ -90,6 +101,15 @@ impl DeploymentMap {
                     .map(|domain| (domain.to_owned(), *id))
             })
             .collect();
+
+        // sync map.certificates
+        let required_certificates = self.custom_domains.keys();
+        for domain in required_certificates {
+            if !self.certificates.has_domain(domain) {
+                self.certificates.insert_domain(domain.to_owned());
+            }
+            // TODO: should also remove unneeded certificates?
+        }
 
         // sync map.deployments
         for deployment in required_deployments {

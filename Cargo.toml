@@ -67,6 +67,6 @@ tempfile = "3.14.0"
 [dev-dependencies]
 regex = "1.10.6"
 
-[[bin]]
-name = "openapi"
-path = "src/openapi.rs"
+# [[bin]]
+# name = "openapi"
+# path = "src/openapi.rs"

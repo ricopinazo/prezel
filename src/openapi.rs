@@ -16,6 +16,7 @@ mod listener;
 mod logging;
 mod paths;
 mod time;
+mod tls;
 
 fn main() {
     let openapi = get_open_api();
