@@ -326,9 +326,7 @@ pub(crate) fn run_proxy(manager: Manager, config: Conf, store: CertificateStore)
     let cloned = store.clone();
     tls_settings.set_servername_callback(move |ssl, alert| {
         let domain = ssl.servername(NameType::HOST_NAME);
-        dbg!(domain);
         if let Some(domain) = domain {
-            dbg!(cloned.get_domain(domain));
             if let Some(TlsState::Ready(certificate)) = cloned.get_domain(domain) {
                 // ssl.set_certificate(&certificate.cert); // this does not seem to work
                 // ssl.set_private_key(&certificate.key);
@@ -343,7 +341,6 @@ pub(crate) fn run_proxy(manager: Manager, config: Conf, store: CertificateStore)
                     .map_err(|_| SniError::ALERT_FATAL)?;
             }
         }
-
         Ok(())
     });
 

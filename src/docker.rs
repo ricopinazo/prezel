@@ -3,8 +3,8 @@
 use anyhow::anyhow;
 use bollard::{
     container::{
-        Config, ListContainersOptions, LogOutput, LogsOptions, NetworkingConfig,
-        StartContainerOptions,
+        Config, CreateContainerOptions, ListContainersOptions, LogOutput, LogsOptions,
+        NetworkingConfig, StartContainerOptions,
     },
     errors::Error as DockerError,
     image::BuildImageOptions,
@@ -26,6 +26,7 @@ use nanoid::nanoid;
 use serde::Serialize;
 use std::{
     error::Error,
+    fmt::format,
     future::{self, Future},
     net::Ipv4Addr,
     path::Path,
@@ -46,6 +47,7 @@ pub(crate) fn docker_client() -> BollardDoker {
 }
 
 const NETWORK_NAME: &'static str = "prezel";
+const CONTAINER_PREFIX: &'static str = "prezel-";
 
 pub(crate) async fn get_bollard_container_ipv4(container_id: &str) -> Option<Ipv4Addr> {
     let docker = docker_client();
@@ -129,9 +131,14 @@ pub(crate) async fn create_container<'a, I: Iterator<Item = &'a HostFile>>(
             format!("{host}:{container}")
         })
         .collect();
-    let response = docker
+    let id = nanoid!(21, &alphabet::LOWERCASE_PLUS_NUMBERS);
+    let name = format!("{CONTAINER_PREFIX}{id}",);
+    docker
         .create_container::<String, _>(
-            None,
+            Some(CreateContainerOptions {
+                name: name.clone(),
+                platform: None,
+            }),
             Config {
                 image: Some(image),
                 env: Some(env.into()),
@@ -146,7 +153,7 @@ pub(crate) async fn create_container<'a, I: Iterator<Item = &'a HostFile>>(
             },
         )
         .await?;
-    Ok(response.id)
+    Ok(name)
 }
 
 pub(crate) async fn run_container(id: &str) -> Result<(), impl Error> {
@@ -313,11 +320,12 @@ pub(crate) async fn list_managed_container_ids() -> anyhow::Result<impl Iterator
     };
     let containers = docker.list_containers(Some(opts)).await?;
 
-    let instance_container_name = "/prezel".to_owned();
     Ok(containers
         .into_iter()
         .filter(move |summary| match &summary.names {
-            Some(names) => names.get(0) != Some(&instance_container_name),
+            Some(names) => names
+                .get(0)
+                .is_some_and(|name| name.starts_with(&format!("/{CONTAINER_PREFIX}"))),
             None => true,
         })
         .filter_map(|summary| summary.id))
