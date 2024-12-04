@@ -76,7 +76,8 @@ impl Manager {
         // TODO: reset the timer every time full_sync_with_github is executed triggered by something else
         let cloned_manager = manager.clone();
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(60 * 5)); // Every 5 minutes
+            // let mut interval = tokio::time::interval(Duration::from_secs(60 * 5)); // Every 5 minutes
+            let mut interval = tokio::time::interval(Duration::from_secs(30)); // Every 5 minutes // FIXME: change this back
             loop {
                 interval.tick().await;
                 cloned_manager.full_sync_with_github().await;

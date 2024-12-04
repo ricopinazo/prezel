@@ -133,10 +133,10 @@ pub(crate) async fn create_container<'a, I: Iterator<Item = &'a HostFile>>(
         .collect();
     let id = nanoid!(21, &alphabet::LOWERCASE_PLUS_NUMBERS);
     let name = format!("{CONTAINER_PREFIX}{id}",);
-    docker
+    let response = docker
         .create_container::<String, _>(
             Some(CreateContainerOptions {
-                name: name.clone(),
+                name,
                 platform: None,
             }),
             Config {
@@ -153,7 +153,7 @@ pub(crate) async fn create_container<'a, I: Iterator<Item = &'a HostFile>>(
             },
         )
         .await?;
-    Ok(name)
+    Ok(response.id)
 }
 
 pub(crate) async fn run_container(id: &str) -> Result<(), impl Error> {
