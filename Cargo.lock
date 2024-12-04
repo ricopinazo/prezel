@@ -2831,7 +2831,6 @@ dependencies = [
  "serde_json",
  "sqlx",
  "tar",
- "tempdir",
  "tempfile",
  "tokio",
  "tokio-util",

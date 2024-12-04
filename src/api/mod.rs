@@ -139,6 +139,7 @@ struct ApiDeployment {
     // port: u16,
     url: Option<String>,
     target_url: Option<String>,
+    custom_urls: Vec<String>,
     db_url: Option<String>,
     status: Status,
     app_container: Option<String>,
@@ -158,7 +159,9 @@ impl ApiDeployment {
         box_domain: &str,
         github: &Github,
     ) -> Self {
-        let (status, url, prod_url, db_url, app_container) = if let Some(deployment) = deployment {
+        let (status, url, prod_url, custom_urls, db_url, app_container) = if let Some(deployment) =
+            deployment
+        {
             let status = deployment.app_container.status.read().await.to_status();
 
             let project_name = &db_deployment.project.name;
@@ -167,16 +170,21 @@ impl ApiDeployment {
             let prod_url = is_prod
                 .then_some(deployment.get_prod_hostname(box_domain, project_name))
                 .plus_https();
+            let custom_urls = if is_prod {
+                db_deployment.project.custom_domains.plus_https()
+            } else {
+                vec![]
+            };
 
             let app_container = deployment.app_container.get_container_id().await;
-            (status, url, prod_url, db_url, app_container)
+            (status, url, prod_url, custom_urls, db_url, app_container)
         } else {
             let status = match db_deployment.result {
                 Some(BuildResult::Failed) => Status::Failed,
                 Some(BuildResult::Built) => Status::Built,
                 None => Status::Queued,
             };
-            (status, None, None, None, None)
+            (status, None, None, vec![], None, None)
         };
 
         let repo_id = db_deployment.project.repo_id.clone();
@@ -195,6 +203,7 @@ impl ApiDeployment {
             gitref,
             url, // TODO: add method to get the http version from the same object !!!
             target_url: prod_url,
+            custom_urls,
             db_url,
             status,
             app_container,
@@ -206,12 +215,24 @@ impl ApiDeployment {
 }
 
 trait PlusHttps {
-    fn plus_https(&self) -> Option<String>;
+    fn plus_https(&self) -> Self;
+}
+
+impl PlusHttps for String {
+    fn plus_https(&self) -> Self {
+        format!("https://{self}")
+    }
 }
 
 impl PlusHttps for Option<String> {
-    fn plus_https(&self) -> Option<String> {
-        self.as_ref().map(|hostname| format!("https://{hostname}"))
+    fn plus_https(&self) -> Self {
+        self.as_ref().map(|hostname| hostname.plus_https())
+    }
+}
+
+impl PlusHttps for Vec<String> {
+    fn plus_https(&self) -> Self {
+        self.iter().map(|hostname| hostname.plus_https()).collect()
     }
 }
 

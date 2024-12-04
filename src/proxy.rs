@@ -181,20 +181,20 @@ impl ProxyHttp for ProxyApp {
         }
     }
 
-    // async fn response_filter(
-    //     &self,
-    //     _session: &mut Session,
-    //     upstream_response: &mut ResponseHeader,
-    //     _ctx: &mut Self::CTX,
-    // ) -> Result<()>
-    // where
-    //     Self::CTX: Send + Sync,
-    // {
-    //     upstream_response
-    //         .insert_header("Access-Control-Allow-Origin", &self.config.coordinator)
-    //         .unwrap();
-    //     Ok(())
-    // }
+    async fn response_filter(
+        &self,
+        _session: &mut Session,
+        upstream_response: &mut ResponseHeader,
+        _ctx: &mut Self::CTX,
+    ) -> Result<()>
+    where
+        Self::CTX: Send + Sync,
+    {
+        upstream_response
+            .insert_header("Access-Control-Allow-Origin", &self.config.coordinator)
+            .unwrap();
+        Ok(())
+    }
 
     async fn logging(
         &self,
