@@ -5,13 +5,16 @@ import { Footer } from "./components/Footer";
 const config: DocsThemeConfig = {
   head: (
     <>
-      <link rel="icon" href="https://prezel.app/icon" />
+      <link rel="icon" href="https://prezel.app/icon.svg" />
     </>
   ),
   // logo: <span>Prezel</span>,
   logo: (
     <>
-      <img style={{ height: 28, width: 28 }} src="https://prezel.app/icon" />
+      <img
+        style={{ height: 28, width: 28 }}
+        src="https://prezel.app/icon.svg"
+      />
       {/* <Logo
         style={{ height: 28, width: 28 }}
         // className="h-12 w-12"
