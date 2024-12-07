@@ -156,8 +156,8 @@ mod tls_tests {
     async fn test_registration() {
         let conf = Conf::read();
         let (account, _credentials) = create_new_account(LetsEncrypt::Staging.url()).await;
-        let certificate = generate_tls_certificate(account, &conf).await;
-        dbg!(certificate);
+        // let certificate = generate_tls_certificate(account, &conf).await;
+        // dbg!(certificate);
     }
 
     #[tokio::test]

@@ -14,12 +14,9 @@ pub(crate) struct DockerWorker {
 impl Worker for DockerWorker {
     fn work(&self) -> impl std::future::Future<Output = ()> + Send {
         async {
-            dbg!("running docker garbage collector");
             // Careful, don't remove a container that was just started but not wrote yet into a Ready status
             for container in list_managed_container_ids().await.unwrap() {
-                dbg!(&container);
                 if !self.is_container_in_use(&container).await {
-                    dbg!("stopping");
                     stop_container(&container).await;
                     delete_container(&container).await;
                 }

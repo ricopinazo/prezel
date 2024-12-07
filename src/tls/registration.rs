@@ -33,7 +33,7 @@ pub(crate) async fn generate_certificate_and_persist<
     challenge_type: ChallengeType,
     handle_challenge: F,
 ) -> TlsCertificate {
-    match TlsCertificate::load_from_disk(domain.clone()) {
+    match TlsCertificate::load_from_disk(domain.clone()).await {
         Ok(certificate) if certificate.domain == domain => certificate,
         _ => {
             let mut order = create_order(account, domain.clone()).await;
@@ -43,7 +43,7 @@ pub(crate) async fn generate_certificate_and_persist<
                 complete_challenge(&mut order, challenge.as_ref()).await;
             }
             aquire_certificate(order, domain.clone()).await;
-            TlsCertificate::load_from_disk(domain).unwrap()
+            TlsCertificate::load_from_disk(domain).await.unwrap()
         }
     }
 }

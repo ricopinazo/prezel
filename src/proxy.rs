@@ -1,3 +1,4 @@
+use std::fs;
 use std::net::{Ipv4Addr, SocketAddrV4};
 
 use async_trait::async_trait;
@@ -14,7 +15,7 @@ use pingora::server::Server;
 use pingora::services::listening::Service;
 use pingora::tls::ssl::{NameType, SniError, SslContext, SslFiletype, SslMethod};
 use pingora::ErrorType::Custom;
-use pingora::{Error, ErrorSource};
+use pingora::{tls, Error, ErrorSource};
 use url::Url;
 
 use crate::api::API_PORT;
@@ -22,6 +23,7 @@ use crate::conf::Conf;
 use crate::deployments::manager::Manager;
 use crate::listener::{Access, Listener};
 use crate::logging::{Level, RequestLog, RequestLogger};
+use crate::paths::get_container_root;
 use crate::time::now;
 use crate::tls::{CertificateStore, TlsState};
 
@@ -270,7 +272,6 @@ impl ServeHttp for HttpHandler {
             }) = self.certificates.get_domain(host)
             {
                 if path == format!("/.well-known/acme-challenge/{challenge_file}") {
-                    dbg!("challenge path");
                     let content_length = challenge_content.len();
                     Response::builder()
                         .status(StatusCode::OK)
@@ -316,11 +317,19 @@ pub(crate) fn run_proxy(manager: Manager, config: Conf, store: CertificateStore)
     };
     let mut https_service = http_proxy_service(&server.configuration, proxy_app);
     let certificate = store.get_default_certificate();
-    // let tls_callback = Box::new(TlsCallback { certificate });
-    // let mut tls_settings = TlsSettings::with_callbacks(tls_callback).unwrap();
     let mut tls_settings = TlsSettings::intermediate(&certificate.cert, &certificate.key).unwrap();
+    for intermediate in certificate.intermediates {
+        tls_settings.add_extra_chain_cert(intermediate).unwrap();
+    }
 
-    // TODO: tls_settings.add_extra_chain_cert(cert) !!!!!!!!!!!!!!!!!!!!!!
+    // let path = get_container_root().join("E5.der");
+    // let interm = tls::x509::X509::from_der(&fs::read(&path).unwrap()).unwrap();
+    // tls_settings.add_extra_chain_cert(interm).unwrap();
+
+    // let path = get_container_root().join("isrg-root-x2.der");
+    // let interm = tls::x509::X509::from_der(&fs::read(&path).unwrap()).unwrap();
+    // tls_settings.add_extra_chain_cert(interm).unwrap();
+
     // TODO: tls_settings.enable_h2();
 
     let cloned = store.clone();
@@ -330,11 +339,14 @@ pub(crate) fn run_proxy(manager: Manager, config: Conf, store: CertificateStore)
             if let Some(TlsState::Ready(certificate)) = cloned.get_domain(domain) {
                 // ssl.set_certificate(&certificate.cert); // this does not seem to work
                 // ssl.set_private_key(&certificate.key);
-                dbg!();
                 let mut ctx = SslContext::builder(SslMethod::tls()).unwrap();
                 ctx.set_certificate_chain_file(&certificate.cert).unwrap();
                 ctx.set_private_key_file(&certificate.key, SslFiletype::PEM)
                     .unwrap();
+                for intermediate in certificate.intermediates {
+                    ctx.add_extra_chain_cert(intermediate).unwrap();
+                }
+                // ctx.add_extra_chain_cert(cert)
                 // ctx.set_alpn_select_callback(prefer_h2);
                 let built = ctx.build();
                 ssl.set_ssl_context(&built)
@@ -357,18 +369,4 @@ pub(crate) fn run_proxy(manager: Manager, config: Conf, store: CertificateStore)
     server.add_service(http_service);
 
     server.run_forever();
-}
-
-// TODO: remove
-fn create_ssl_context(
-    cert_path: &str,
-    key_path: &str,
-) -> Result<SslContext, Box<dyn std::error::Error>> {
-    let mut ctx = SslContext::builder(SslMethod::tls())?;
-
-    ctx.set_certificate_chain_file(cert_path)?;
-    ctx.set_private_key_file(key_path, SslFiletype::PEM)?;
-    // ctx.set_alpn_select_callback(prefer_h2); // TODO: review if this is important
-    let built = ctx.build();
-    Ok(built)
 }
