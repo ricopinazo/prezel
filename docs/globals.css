@@ -1,3 +1,8 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+body {
+  /* this fixes a problem with the bg */
+  background-color: rgb(var(--nextra-bg));
+}
