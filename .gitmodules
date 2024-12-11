@@ -1,0 +1,3 @@
+[submodule "examples/next-drizzle"]
+	path = examples/next-drizzle
+	url = git@github.com:prezel-app/next-drizzle.git

@@ -13,7 +13,7 @@ use super::{
     FileSystemOutput, WorkerHandle,
 };
 
-const DB_PATH_ENV_NAME: &str = "DATABASE_URL";
+const DB_PATH_ENV_NAME: &str = "PREZEL_DB_URL";
 
 #[derive(Clone, Debug)]
 pub(crate) struct CommitContainer {
@@ -45,11 +45,10 @@ impl CommitContainer {
         let db_file = cloned_db_file
             .clone()
             .unwrap_or_else(|| main_db_file.clone());
+        let db_path = db_file.get_container_file();
+        let db_path_str = db_path.to_str().unwrap();
         let default_env = [
-            (
-                DB_PATH_ENV_NAME,
-                db_file.get_container_file().to_str().unwrap(),
-            ),
+            (DB_PATH_ENV_NAME, format!("file:{db_path_str}").as_str()),
             ("HOST", "0.0.0.0"),
             ("PORT", "80"),
         ]

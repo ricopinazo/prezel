@@ -221,7 +221,7 @@ impl Container {
 
     pub(crate) async fn setup_as_standby(&self) -> anyhow::Result<()> {
         self.build().await?;
-        self.setup.setup_filesystem().await?; // FIXME: wtf is this and why am I not calling it when I do access?????????
+        self.setup.setup_filesystem().await?;
         Ok(())
     }
 
