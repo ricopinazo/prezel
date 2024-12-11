@@ -1,7 +1,5 @@
 .cargo
-*.db
 *.pem
-.env
 target
 .DS_Store
 docs/node_modules
