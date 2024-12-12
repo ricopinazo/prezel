@@ -1,0 +1,66 @@
+---
+import { db, Message, desc, inArray } from 'astro:db';
+import Layout from '../layouts/Layout.astro';
+import background from '../assets/background.svg';
+// import astroLogo from '../assets/astro.svg';
+import astroLogo from '../assets/astro-mini.svg';
+
+const MESSAGE_LIMIT = 100;
+
+export const prerender = false;
+
+if (Astro.request.method === 'POST') {
+  // Parse form data
+  const formData = await Astro.request.formData();
+  const message = formData.get('message');
+  if (typeof message === 'string' && message.length > 0) {
+    // Insert form data into the Message table
+    await db.insert(Message).values({ created: new Date(), content: message });
+    const messages = await db.select().from(Message);
+    if (messages.length > MESSAGE_LIMIT) {
+      const idsToRemove = db.select({ id: Message.id }).from(Message).limit(messages.length - MESSAGE_LIMIT);
+      await db.delete(Message).where(inArray(Message.id, idsToRemove));
+    }
+  }
+  return Astro.redirect(Astro.url.pathname);
+}
+
+// Render the new list of messages on each request
+const messages = await db.select().from(Message).orderBy(desc(Message.created));
+
+// Welcome to Astro! Wondering what to do next? Check out the Astro documentation at https://docs.astro.build
+// Don't want to use any of this? Delete everything in this file, the `assets`, `components`, and `layouts` directories, and start fresh.
+---
+
+<Layout>
+    <div class="h-full ">
+        <img id="background" class="absolute top-0 left-0 w-full h-full -z-10 blur-[100px]" src={background.src} fetchpriority="high" />
+    	<main class="h-full flex justify-center">
+            <section id="hero" class="h-full flex flex-col items-center pt-40 pb-10 gap-8 overflow-hidden">
+                <div class="flex gap-4 items-center">
+                    <a href="https://astro.build">
+                        <img src={astroLogo.src} class="h-20" alt="Astro Homepage" />
+                    </a>
+                    <span class="text-xl">💛</span>
+                    <!-- <a href="https://prezel.app" class="flex items-center gap-2"> -->
+                    <a href="https://prezel.app">
+                        <use href="https://prezel.app/icon.svg" class="h-20" style="--color_fill: #000;"></use>
+                        <!-- <img src="https://prezel.app/icon.svg" class="h-20" alt="Prezel Homepage" /> -->
+                        <!-- <span class="text-xl">prezel</span> -->
+                    </a>
+                </div>
+                <p class="text-gray-600">Say hello to the self-hosting Astro community!</p>
+               	<form class="flex flex-col gap-4 w-96 items-end" method="POST" style="display: grid">
+                    <textarea class="w-96 min-h-10 max-h-40 rounded-lg p-2" id="message" name="message" />
+                    <button class="mx-auto w-20 h-8 bg-red-300 hover:bg-red-400 rounded-lg" type="submit">Submit</button>
+                </form>
+                <div class="flex flex-col items-center gap-4 flex-1 overflow-auto w-[500px]">
+                    {messages.map(({ created, content }) => <div class="bg-gray-50 p-4 opacity-60 rounded-lg w-[450px]">
+                        <p class="text-gray-400 mb-1">{new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' }).format(created)}</p>
+                        <p >{content}</p>
+                    </div>)}
+                </div>
+            </section>
+    	</main>
+    </div>
+</Layout>
