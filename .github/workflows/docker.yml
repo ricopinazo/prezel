@@ -4,7 +4,7 @@ on:
   push:
 
 env:
-  REGISTRY_IMAGE: ricopinazo/prezel
+  REGISTRY_IMAGE: prezel/prezel
 
 jobs:
   build:
