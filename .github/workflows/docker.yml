@@ -18,8 +18,8 @@ jobs:
     steps:
       - name: Checkout # try removing this step and setp: . in docker/build-push-action@v6 and try again
         uses: actions/checkout@v4
-        with:
-          submodules: "true"
+        # with:
+        #   submodules: "true"
 
       - name: Prepare
         run: |
