@@ -27,6 +27,11 @@ struct RequestBody {
     id: String,
 }
 
+#[derive(Serialize)]
+struct RepositoriesParameters {
+    per_page: usize,
+}
+
 pub(crate) struct Commit {
     pub(crate) timestamp: i64,
     pub(crate) sha: String,
@@ -75,7 +80,10 @@ impl Github {
     pub(crate) async fn get_repos(&self) -> anyhow::Result<Vec<Repository>> {
         let crab = self.get_crab().await?;
         let installation_repos: InstallationRepositories = crab
-            .get("/installation/repositories", None::<&()>)
+            .get(
+                "/installation/repositories",
+                Some(&RepositoriesParameters { per_page: 100 }),
+            )
             .await
             .unwrap();
         Ok(installation_repos.repositories)
