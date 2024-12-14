@@ -24,6 +24,7 @@ use crate::{
     )
 )]
 #[get("/apps", wrap = "RequireApiKey")]
+#[tracing::instrument]
 async fn get_projects(state: Data<AppState>) -> impl Responder {
     let projects = state.db.get_projects().await;
     let projects_with_deployments = projects.into_iter().map(|project| {
@@ -66,6 +67,7 @@ async fn get_projects(state: Data<AppState>) -> impl Responder {
     )
 )]
 #[get("/apps/{name}", wrap = "RequireApiKey")]
+#[tracing::instrument]
 async fn get_project(state: Data<AppState>, name: Path<String>) -> impl Responder {
     let name = name.into_inner();
     let project = state.db.get_project_by_name(&name).await;
@@ -132,6 +134,7 @@ async fn create_project(project: Json<InsertProject>, state: Data<AppState>) -> 
     )
 )]
 #[patch("/apps/{id}", wrap = "RequireApiKey")]
+#[tracing::instrument]
 async fn update_project(
     project: Json<UpdateProject>,
     state: Data<AppState>,
@@ -152,6 +155,7 @@ async fn update_project(
     )
 )]
 #[delete("/apps/{id}", wrap = "RequireApiKey")]
+#[tracing::instrument]
 async fn delete_project(state: Data<AppState>, id: Path<i64>) -> impl Responder {
     state.db.delete_project(id.into_inner()).await;
     state.manager.sync_with_db().await;

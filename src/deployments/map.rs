@@ -74,12 +74,15 @@ impl DeploymentMap {
         github: &Github,
         db: &Db,
     ) {
+        dbg!();
         let required_deployments = db.get_deployments_with_project().await.collect::<Vec<_>>();
+        dbg!();
 
         let required_ids = required_deployments
             .iter()
             .map(|dep| (dep.project.id, dep.deployment.url_id.clone()))
             .collect::<HashSet<_>>();
+        dbg!();
 
         // sync map.names
         let projects = required_deployments
@@ -90,6 +93,7 @@ impl DeploymentMap {
             .iter()
             .map(|(id, project)| (project.name.clone(), *id))
             .collect();
+        dbg!();
 
         // sync map.custom_domains
         self.custom_domains = projects
@@ -110,6 +114,7 @@ impl DeploymentMap {
             }
             // TODO: should also remove unneeded certificates?
         }
+        dbg!();
 
         // sync map.deployments
         for deployment in required_deployments {
@@ -130,6 +135,7 @@ impl DeploymentMap {
                 self.deployments.remove(&id);
             }
         }
+        dbg!();
 
         // sync map.prod
         self.prod = stream::iter(projects)
@@ -215,11 +221,13 @@ impl DeploymentMap {
                 _ => {}
             }
         }
+        dbg!();
 
         // downgrade unused containers
         for container in self.get_all_non_prod_containers().await {
             container.downgrade_if_unused().await;
         }
+        dbg!();
     }
 
     fn iter_prod_deployments(&self) -> impl Iterator<Item = &Deployment> {

@@ -42,6 +42,7 @@ use crate::{alphabet, env::EnvVars, paths::HostFile};
 //     Docker::unix("/var/run/docker.sock")
 // }
 
+#[tracing::instrument]
 pub(crate) fn docker_client() -> BollardDoker {
     BollardDoker::connect_with_unix_defaults().unwrap()
 }
@@ -49,6 +50,7 @@ pub(crate) fn docker_client() -> BollardDoker {
 const NETWORK_NAME: &'static str = "prezel";
 const CONTAINER_PREFIX: &'static str = "prezel-";
 
+#[tracing::instrument]
 pub(crate) async fn get_bollard_container_ipv4(container_id: &str) -> Option<Ipv4Addr> {
     let docker = docker_client();
     let response = docker.inspect_container(container_id, None).await.ok()?;
@@ -71,6 +73,7 @@ pub(crate) enum LogType {
     Err,
 }
 
+#[tracing::instrument]
 pub(crate) async fn get_container_execution_logs(id: &str) -> impl Iterator<Item = DockerLog> {
     let docker = docker_client();
     let logs = docker
@@ -118,6 +121,7 @@ fn parse_message(message: Bytes) -> Option<(i64, String)> {
     Some((millis, content.to_owned()))
 }
 
+// #[tracing::instrument]
 pub(crate) async fn create_container<'a, I: Iterator<Item = &'a HostFile>>(
     image: String,
     env: EnvVars,
@@ -156,6 +160,7 @@ pub(crate) async fn create_container<'a, I: Iterator<Item = &'a HostFile>>(
     Ok(response.id)
 }
 
+#[tracing::instrument]
 pub(crate) async fn run_container(id: &str) -> Result<(), impl Error> {
     let docker = docker_client();
     docker
@@ -163,6 +168,7 @@ pub(crate) async fn run_container(id: &str) -> Result<(), impl Error> {
         .await
 }
 
+// #[tracing::instrument]
 pub(crate) async fn build_dockerfile<O: Future<Output = ()> + Send, F: FnMut(BuildInfo) -> O>(
     path: &Path,
     buildargs: EnvVars,
@@ -294,24 +300,28 @@ pub(crate) async fn build_dockerfile<O: Future<Output = ()> + Send, F: FnMut(Bui
 //     }
 // }
 
+#[tracing::instrument]
 pub(crate) async fn stop_container(name: &str) -> anyhow::Result<()> {
     let docker = docker_client();
     docker.stop_container(name, None).await?;
     Ok(())
 }
 
+#[tracing::instrument]
 pub(crate) async fn delete_container(name: &str) -> anyhow::Result<()> {
     let docker = docker_client();
     docker.remove_container(name, None).await?;
     Ok(())
 }
 
+#[tracing::instrument]
 pub(crate) async fn delete_image(name: &str) -> anyhow::Result<()> {
     let docker = docker_client();
     docker.remove_image(name, None, None).await?;
     Ok(())
 }
 
+#[tracing::instrument]
 pub(crate) async fn list_managed_container_ids() -> anyhow::Result<impl Iterator<Item = String>> {
     let docker = docker_client();
     let opts: ListContainersOptions<String> = ListContainersOptions {

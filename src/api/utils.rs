@@ -4,6 +4,7 @@ use crate::db::{Db, InsertDeployment, Project};
 
 use super::{ApiDeployment, AppState};
 
+#[tracing::instrument]
 pub(super) async fn get_prod_deployment_id(db: &Db, project: &Project) -> Option<i64> {
     let latest_deployment = db
         .get_latest_successful_prod_deployment_for_project(project.id)
@@ -11,6 +12,7 @@ pub(super) async fn get_prod_deployment_id(db: &Db, project: &Project) -> Option
     project.prod_id.or_else(|| Some(latest_deployment?.id))
 }
 
+#[tracing::instrument]
 pub(super) async fn get_prod_deployment(
     AppState {
         db,
@@ -35,6 +37,7 @@ pub(super) async fn get_prod_deployment(
     )
 }
 
+#[tracing::instrument]
 pub(super) async fn get_all_deployments(
     AppState {
         db,

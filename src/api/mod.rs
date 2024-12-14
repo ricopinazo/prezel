@@ -66,7 +66,7 @@ fn configure_service(store: Data<AppState>) -> impl FnOnce(&mut ServiceConfig) {
 }
 
 // TODO: there is some duplication here, because manager holds db and github as well
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct AppState {
     pub(crate) db: Db,
     pub(crate) manager: Manager,

@@ -8,6 +8,7 @@ use crate::{
     container::{Container, ContainerStatus},
     db::Db,
     deployments::{
+        manager::InstrumentedRwLock,
         map::DeploymentMap,
         worker::{Worker, WorkerHandle},
     },
@@ -17,7 +18,7 @@ use crate::{
 #[derive(Clone)]
 pub(crate) struct BuildWorker {
     // TODO: define a new function instead of having these public, same for other workers
-    pub(crate) map: Arc<RwLock<DeploymentMap>>,
+    pub(crate) map: Arc<InstrumentedRwLock<DeploymentMap>>,
     pub(crate) db: Db,
     pub(crate) github: Github,
     pub(crate) build_queue: WorkerHandle,
