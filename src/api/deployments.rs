@@ -21,6 +21,7 @@ use crate::{
     )
 )]
 #[post("/deployments/redeploy", wrap = "RequireApiKey")]
+#[tracing::instrument]
 async fn redeploy(deployment: Json<i64>, state: Data<AppState>) -> impl Responder {
     clone_deployment(&state.db, deployment.0).await;
     state.manager.sync_with_db().await;
@@ -37,6 +38,7 @@ async fn redeploy(deployment: Json<i64>, state: Data<AppState>) -> impl Responde
     )
 )]
 #[delete("/deployments/{id}", wrap = "RequireApiKey")]
+#[tracing::instrument]
 async fn delete_deployment(state: Data<AppState>, id: Path<i64>) -> impl Responder {
     state.db.delete_deployment(id.into_inner()).await;
     state.manager.sync_with_db().await;
@@ -53,6 +55,7 @@ async fn delete_deployment(state: Data<AppState>, id: Path<i64>) -> impl Respond
     )
 )]
 #[post("/sync", wrap = "RequireApiKey")]
+#[tracing::instrument]
 async fn sync(state: Data<AppState>) -> impl Responder {
     state.manager.full_sync_with_github().await;
     HttpResponse::Ok()
@@ -70,6 +73,7 @@ async fn sync(state: Data<AppState>) -> impl Responder {
     )
 )]
 #[get("/deployments/{id}/logs", wrap = "RequireApiKey")]
+#[tracing::instrument]
 async fn get_deployment_logs(state: Data<AppState>, id: Path<i64>) -> impl Responder {
     let id = id.into_inner();
     let app_container = match state.manager.get_deployment(id).await {
@@ -107,6 +111,7 @@ async fn get_deployment_logs(state: Data<AppState>, id: Path<i64>) -> impl Respo
     )
 )]
 #[get("/deployments/{id}/build", wrap = "RequireApiKey")]
+#[tracing::instrument]
 async fn get_deployment_build_logs(state: Data<AppState>, id: Path<i64>) -> impl Responder {
     let id = id.into_inner();
     let logs: Vec<Log> = state

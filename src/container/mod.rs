@@ -77,50 +77,6 @@ pub(crate) enum ContainerStatus {
     Failed,
 }
 
-#[derive(Debug)]
-pub(crate) struct AtomicStatus {
-    status: Arc<RwLock<ContainerStatus>>,
-    lock: Mutex<()>,
-}
-
-impl From<ContainerStatus> for AtomicStatus {
-    fn from(value: ContainerStatus) -> Self {
-        Self {
-            status: RwLock::new(value).into(),
-            lock: Default::default(),
-        }
-    }
-}
-
-impl AtomicStatus {
-    pub(crate) async fn read(&self) -> tokio::sync::RwLockReadGuard<'_, ContainerStatus> {
-        self.status.read().await
-    }
-
-    async fn aquire(&self) -> WritableStatus {
-        let lock = self.lock.lock().await;
-
-        WritableStatus {
-            status: self.status.clone(),
-            lock,
-        }
-    }
-}
-
-#[derive(Debug)]
-struct WritableStatus<'a> {
-    pub(crate) status: Arc<RwLock<ContainerStatus>>, // access this to read/write the status
-    lock: MutexGuard<'a, ()>,
-}
-
-impl<'a> Deref for WritableStatus<'a> {
-    type Target = RwLock<ContainerStatus>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.status
-    }
-}
-
 impl ContainerStatus {
     fn get_container_id(&self) -> Option<String> {
         if let Self::Ready { container, .. } = self {
@@ -140,20 +96,6 @@ impl ContainerStatus {
             Self::Failed => Status::Failed,
         }
     }
-
-    // fn is_not_built(&self) -> bool {
-    //     match self {
-    //         Self::Built => true, // FIXME: this seems like a contradiction!!
-    //         _ => false,
-    //     }
-    // }
-
-    // pub(crate) fn is_built(&self) -> bool {
-    //     match self {
-    //         Self::StandBy { .. } | Self::Ready { .. } => true,
-    //         Self::Built | Self::Queued { .. } | Self::Failed { .. } | Self::Building => false,
-    //     }
-    // }
 }
 
 // Potential problems ot be aware of
@@ -166,7 +108,7 @@ impl ContainerStatus {
 /// before responding with the socket address
 #[derive(Debug)]
 pub(crate) struct Container {
-    pub(crate) status: AtomicStatus,
+    pub(crate) status: RwLock<ContainerStatus>,
     pub(crate) result: RwLock<Option<BuildResult>>,
     setup: Box<dyn ContainerSetup>,
     config: ContainerConfig,
@@ -178,6 +120,7 @@ pub(crate) struct Container {
 
 impl Container {
     // TODO: remove this function and just make the private fields public within the module (they are already no?)
+    #[tracing::instrument]
     pub(crate) fn new(
         setup: impl ContainerSetup,
         config: ContainerConfig,
@@ -199,10 +142,12 @@ impl Container {
     }
 
     // TODO: review, do we really need to expose the container id in the api?
+    #[tracing::instrument]
     pub(crate) async fn get_container_id(&self) -> Option<String> {
         self.status.read().await.get_container_id()
     }
 
+    #[tracing::instrument]
     pub(crate) async fn get_logs(&self) -> Box<dyn Iterator<Item = DockerLog>> {
         if let Some(container) = self.get_container_id().await {
             Box::new(get_container_execution_logs(&container).await)
@@ -212,25 +157,25 @@ impl Container {
     }
 
     /// this function runs no sanity checks on the current status before setting the new one
+    #[tracing::instrument]
     pub(crate) async fn enqueue(&self) {
-        let status = self.status.aquire().await;
-        *status.write().await = ContainerStatus::Queued {
+        *self.status.write().await = ContainerStatus::Queued {
             trigger_access: None,
         };
     }
 
+    #[tracing::instrument]
     pub(crate) async fn setup_as_standby(&self) -> anyhow::Result<()> {
         self.build().await?;
         self.setup.setup_filesystem().await?;
         Ok(())
     }
 
+    #[tracing::instrument]
     pub(crate) async fn downgrade_if_unused(&self) {
-        let status = self.status.aquire().await;
-
         let new_status = if let ContainerStatus::Ready {
             image, last_access, ..
-        } = status.read().await.deref()
+        } = self.status.read().await.deref()
         {
             let last_access = last_access.read().await;
             let elapsed = Instant::now().checked_duration_since(*last_access);
@@ -246,7 +191,7 @@ impl Container {
         };
 
         if let Some(new_status) = new_status {
-            *status.write().await = new_status;
+            *self.status.write().await = new_status;
         }
     }
 
@@ -291,20 +236,20 @@ impl Container {
     //     Ok(())
     // }
 
+    #[tracing::instrument]
     async fn build(&self) -> anyhow::Result<()> {
-        let status = self.status.aquire().await;
         self.hooks.on_build_started().await;
-        *status.write().await = ContainerStatus::Building;
+        *self.status.write().await = ContainerStatus::Building;
 
         match self.build_with_result().await {
             Ok(image) => {
                 self.hooks.on_build_finished().await;
-                *status.write().await = ContainerStatus::StandBy { image };
+                *self.status.write().await = ContainerStatus::StandBy { image };
                 *self.result.write().await = Some(BuildResult::Built);
             }
             Err(error) => {
                 self.hooks.on_build_failed().await;
-                *status.write().await = ContainerStatus::Failed;
+                *self.status.write().await = ContainerStatus::Failed;
                 *self.result.write().await = Some(BuildResult::Failed);
             }
         }
@@ -312,6 +257,7 @@ impl Container {
     }
 
     // TODO: rename this
+    #[tracing::instrument]
     async fn build_with_result(&self) -> anyhow::Result<String> {
         let tempdir = TempDir::new()?;
         let path = tempdir.as_ref();
@@ -328,9 +274,9 @@ impl Container {
         Ok(image)
     }
 
+    #[tracing::instrument]
     pub(crate) async fn start(&self) -> anyhow::Result<SocketAddrV4> {
-        let status = self.status.aquire().await;
-        let cloned_status = status.read().await.clone();
+        let cloned_status = self.status.read().await.clone();
         if let ContainerStatus::StandBy { image } = cloned_status {
             let container = create_container(
                 image.clone(),
@@ -351,7 +297,7 @@ impl Container {
             // FIXME: this will deadlock as status has a read lock on it
             // what im doing seems fundamentally wrong
             // maybe I should not be able to create a read lock on a WritableStatus
-            *status.write().await = ContainerStatus::Ready {
+            *self.status.write().await = ContainerStatus::Ready {
                 image: image.clone(),
                 container,
                 socket,
@@ -424,7 +370,7 @@ impl Listener for Arc<Container> {
                         Ok(Access::Socket(socket))
                     }
                     ContainerStatus::Built => {
-                        *self.status.aquire().await.write().await = ContainerStatus::Queued {
+                        *self.status.write().await = ContainerStatus::Queued {
                             trigger_access: Some(Instant::now()),
                         };
                         self.build_queue.trigger();

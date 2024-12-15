@@ -2,7 +2,7 @@ use std::{error::Error, net::Ipv4Addr};
 
 use actix_cors::Cors;
 use actix_web::{middleware::Logger, web::Data, App, HttpServer};
-use log::info;
+use tracing::info;
 use utoipa::{
     openapi::{
         security::{ApiKey, ApiKeyValue, SecurityScheme},

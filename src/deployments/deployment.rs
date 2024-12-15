@@ -19,7 +19,8 @@ use super::worker::WorkerHandle;
 
 #[derive(Debug)]
 pub(crate) struct Deployment {
-    pub(crate) branch: Option<String>,
+    pub(crate) branch: String,
+    pub(crate) default_branch: bool,
     pub(crate) sha: String,
     pub(crate) id: i64,
     pub(crate) project: i64,
@@ -54,6 +55,7 @@ impl Deployment {
             deployment,
             project,
         } = deployment;
+        let default_branch = deployment.is_default_branch();
         let DbDeployment {
             sha,
             env,
@@ -68,11 +70,11 @@ impl Deployment {
         let env = env.into();
 
         let dbs_path = get_dbs_path(project.id);
-        let cloned_db_file = if branch.is_some() {
+        let cloned_db_file = if default_branch {
+            None
+        } else {
             let path = dbs_path.join(id.to_string());
             Some(HostFile::new(path, "preview.db"))
-        } else {
-            None
         };
         let main_db_file = HostFile::new(dbs_path, "main.db");
 
@@ -80,8 +82,6 @@ impl Deployment {
         let db_file = cloned_db_file
             .clone()
             .unwrap_or_else(|| main_db_file.clone());
-
-        let public = branch.is_none();
 
         let hooks = StatusHooks::new(db, id);
 
@@ -105,7 +105,7 @@ impl Deployment {
             id,
             env,
             project.root.clone(),
-            public,
+            default_branch, // public
             main_db_file,
             cloned_db_file,
             inistial_status,
@@ -115,6 +115,7 @@ impl Deployment {
 
         Self {
             branch,
+            default_branch,
             sha,
             id,
             project: project.id,

@@ -4,6 +4,7 @@ use crate::db::{Db, InsertDeployment, Project};
 
 use super::{ApiDeployment, AppState};
 
+#[tracing::instrument]
 pub(super) async fn get_prod_deployment_id(db: &Db, project: &Project) -> Option<i64> {
     let latest_deployment = db
         .get_latest_successful_prod_deployment_for_project(project.id)
@@ -11,12 +12,9 @@ pub(super) async fn get_prod_deployment_id(db: &Db, project: &Project) -> Option
     project.prod_id.or_else(|| Some(latest_deployment?.id))
 }
 
+#[tracing::instrument]
 pub(super) async fn get_prod_deployment(
-    AppState {
-        db,
-        manager,
-        github,
-    }: &AppState,
+    AppState { db, manager, .. }: &AppState,
     project: i64,
 ) -> Option<ApiDeployment> {
     let box_domain = &manager.box_domain;
@@ -29,18 +27,14 @@ pub(super) async fn get_prod_deployment(
             &db_deployment,
             is_prod,
             box_domain,
-            github,
         )
         .await,
     )
 }
 
+#[tracing::instrument]
 pub(super) async fn get_all_deployments(
-    AppState {
-        db,
-        manager,
-        github,
-    }: &AppState,
+    AppState { db, manager, .. }: &AppState,
     project: i64,
 ) -> Vec<ApiDeployment> {
     let box_domain = &manager.box_domain;
@@ -56,14 +50,8 @@ pub(super) async fn get_all_deployments(
                 } else {
                     false
                 };
-                ApiDeployment::from(
-                    deployment.as_deref(),
-                    &db_deployment,
-                    is_prod,
-                    box_domain,
-                    github,
-                )
-                .await
+                ApiDeployment::from(deployment.as_deref(), &db_deployment, is_prod, box_domain)
+                    .await
             })
             .collect()
             .await;
@@ -79,6 +67,7 @@ pub(crate) async fn clone_deployment(db: &Db, deployment_id: i64) -> Option<()> 
         env: project.env.clone(),
         sha: deployment.sha.clone(),
         branch: deployment.branch.clone(),
+        default_branch: deployment.default_branch,
         timestamp: deployment.timestamp,
         project: deployment.project,
     };

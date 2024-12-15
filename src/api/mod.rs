@@ -66,7 +66,7 @@ fn configure_service(store: Data<AppState>) -> impl FnOnce(&mut ServiceConfig) {
 }
 
 // TODO: there is some duplication here, because manager holds db and github as well
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct AppState {
     pub(crate) db: Db,
     pub(crate) manager: Manager,
@@ -157,7 +157,6 @@ impl ApiDeployment {
         db_deployment: &DeploymentWithProject,
         is_prod: bool,
         box_domain: &str,
-        github: &Github,
     ) -> Self {
         let (status, url, prod_url, custom_urls, db_url, app_container) = if let Some(deployment) =
             deployment
@@ -187,12 +186,6 @@ impl ApiDeployment {
             (status, None, None, vec![], None, None)
         };
 
-        let repo_id = db_deployment.project.repo_id.clone();
-        let gitref = match &db_deployment.branch {
-            Some(branch) => branch.clone(),
-            None => github.get_default_branch(&repo_id).await.unwrap(),
-        };
-
         // TODO: I should have a nested struct for the container related
         // info so it can be an option as a whole
         Self {
@@ -200,7 +193,7 @@ impl ApiDeployment {
             url_id: db_deployment.url_id.clone(),
             // project: value.deployment.project.clone(),// TODO: review why I needed this
             sha: db_deployment.sha.clone(),
-            gitref,
+            gitref: db_deployment.branch.clone(),
             url, // TODO: add method to get the http version from the same object !!!
             target_url: prod_url,
             custom_urls,

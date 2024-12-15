@@ -1,10 +1,10 @@
 use std::{collections::HashMap, ops::Deref, sync::Arc};
 
 use futures::{future::join_all, stream, StreamExt};
-use log::info;
 use nanoid::nanoid;
 use serde::Deserialize;
 use sqlx::{sqlite::SqlitePool, FromRow, Pool, Sqlite};
+use tracing::info;
 use utoipa::ToSchema;
 
 use crate::{
@@ -93,11 +93,18 @@ pub(crate) struct Deployment {
     pub(crate) created: i64,
     pub(crate) env: String,
     pub(crate) sha: String,
-    pub(crate) branch: Option<String>, // I might need to have here a list of prs somehow
+    pub(crate) branch: String, // I might need to have here a list of prs somehow
+    pub(crate) default_branch: i64,
     pub(crate) result: Option<BuildResult>,
     pub(crate) build_started: Option<i64>,
     pub(crate) build_finished: Option<i64>,
     pub(crate) project: i64,
+}
+
+impl Deployment {
+    pub(crate) fn is_default_branch(&self) -> bool {
+        self.default_branch != 0
+    }
 }
 
 #[derive(FromRow)]
@@ -126,7 +133,8 @@ pub(crate) struct InsertDeployment {
     pub(crate) env: String,
     pub(crate) sha: String,
     pub(crate) timestamp: i64,
-    pub(crate) branch: Option<String>,
+    pub(crate) branch: String,
+    pub(crate) default_branch: i64,
     pub(crate) project: i64,
 }
 
@@ -288,7 +296,7 @@ impl Db {
     pub(crate) async fn get_deployment(&self, deployment: i64) -> Option<Deployment> {
         sqlx::query_as!(
             Deployment,
-            r#"select id, url_id, timestamp, created, env, sha, branch, result as "result: BuildResult", build_started, build_finished,project from deployments where deployments.id = ?"#,
+            r#"select id, url_id, timestamp, created, env, sha, branch, default_branch, result as "result: BuildResult", build_started, build_finished,project from deployments where deployments.id = ?"#,
             deployment
         )
         .fetch_optional(&self.conn)
@@ -306,7 +314,7 @@ impl Db {
     pub(crate) async fn get_deployments(&self) -> impl Iterator<Item = Deployment> {
         sqlx::query_as!(
             Deployment,
-            r#"select id, url_id, timestamp, created, env, sha, branch, result as "result: BuildResult", build_started, build_finished, project from deployments"#
+            r#"select id, url_id, timestamp, created, env, sha, branch, default_branch, result as "result: BuildResult", build_started, build_finished, project from deployments"#
         )
         .fetch_all(&self.conn)
         .await
@@ -322,7 +330,7 @@ impl Db {
         let mut deployments: Vec<_> = self
             .get_deployments()
             .await
-            .filter(|deployment| deployment.project == project && deployment.branch == None)
+            .filter(|deployment| deployment.project == project && deployment.is_default_branch())
             .filter(|deployment| deployment.result != Some(BuildResult::Failed))
             .collect();
         deployments.sort_by_key(|deployment| deployment.timestamp);
@@ -360,13 +368,14 @@ impl Db {
         let created = time::now();
         let url_id = create_deployment_url_id();
         sqlx::query!(
-            "insert into deployments (url_id, timestamp, created, env, sha, branch, project) values (?, ?, ?, ?, ?, ?, ?)",
+            "insert into deployments (url_id, timestamp, created, env, sha, branch, default_branch, project) values (?, ?, ?, ?, ?, ?, ?, ?)",
             url_id,
             deployment.timestamp,
             created,
             deployment.env,
             deployment.sha,
             deployment.branch,
+            deployment.default_branch,
             deployment.project
         )
         .execute(&self.conn)

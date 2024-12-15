@@ -21,21 +21,22 @@ impl Worker for GithubWorker {
                 repo_id, env, id, ..
             } in self.db.get_projects().await
             {
-                let commit = get_latest_commit_for_default_branch(&self.github, &repo_id).await;
+                let commit = get_default_branch_and_latest_commit(&self.github, &repo_id).await;
                 match commit {
                     Err(error) => {
                         error!("Got error when trying to read from Github: {error}");
                         error!("Cancelling run of github worker");
                         break;
                     }
-                    Ok(commit) => {
+                    Ok((default_branch, commit)) => {
                         if let Some(commit) = commit {
                             // TODO: review, doesn't seem to make much sense that this is an Option
                             let deployment = InsertDeployment {
                                 env: env.to_owned(),
                                 sha: commit.sha,
                                 timestamp: commit.timestamp,
-                                branch: None,
+                                branch: default_branch,
+                                default_branch: 1, // TODO: abstract this as a bool
                                 project: id,
                             };
                             add_deployment_to_db_if_missing(&self.db, deployment).await;
@@ -60,7 +61,8 @@ impl Worker for GithubWorker {
                                     env: env.to_owned(),
                                     sha: commit.sha,
                                     timestamp: commit.timestamp,
-                                    branch: Some(branch),
+                                    branch,
+                                    default_branch: 0, // TODO: abstract this as a bool
                                     project: id,
                                 };
                                 add_deployment_to_db_if_missing(&self.db, deployment).await;
@@ -73,13 +75,13 @@ impl Worker for GithubWorker {
     }
 }
 
-async fn get_latest_commit_for_default_branch(
+async fn get_default_branch_and_latest_commit(
     github: &Github,
     repo_id: &str,
-) -> anyhow::Result<Option<Commit>> {
+) -> anyhow::Result<(String, Option<Commit>)> {
     let default_branch = github.get_default_branch(repo_id).await?;
     let commit = github.get_latest_commit(repo_id, &default_branch).await?;
-    Ok(commit)
+    Ok((default_branch, commit))
 }
 
 async fn add_deployment_to_db_if_missing(db: &Db, deployment: InsertDeployment) {

@@ -3,12 +3,12 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::{
-    deployments::{map::DeploymentMap, worker::Worker},
+    deployments::{manager::InstrumentedRwLock, map::DeploymentMap, worker::Worker},
     docker::{delete_container, list_managed_container_ids, stop_container},
 };
 
 pub(crate) struct DockerWorker {
-    pub(crate) map: Arc<RwLock<DeploymentMap>>,
+    pub(crate) map: Arc<InstrumentedRwLock<DeploymentMap>>,
 }
 
 impl Worker for DockerWorker {

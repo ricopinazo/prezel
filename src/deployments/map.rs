@@ -138,7 +138,7 @@ impl DeploymentMap {
                     .deployments
                     .iter()
                     .map(|(_, deployment)| deployment)
-                    .filter(|deployment| deployment.project == id && deployment.branch == None)
+                    .filter(|deployment| deployment.project == id && deployment.default_branch)
                     .map(|deployment| {
                         (
                             deployment.app_container.clone(),

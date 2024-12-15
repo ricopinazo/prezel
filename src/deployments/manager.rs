@@ -1,9 +1,9 @@
-use std::{sync::Arc, time::Duration};
+use std::{backtrace::Backtrace, sync::Arc, time::Duration};
 
 use futures::{stream, StreamExt};
 use tokio::sync::{RwLock, RwLockReadGuard};
 
-use crate::{container::Container, db::Db, github::Github, tls::CertificateStore};
+use crate::{container::Container, db::Db, github::Github, time::now, tls::CertificateStore};
 
 use super::{
     deployment::Deployment,
@@ -16,7 +16,7 @@ use super::{
 #[derive(Clone, Debug)]
 pub(crate) struct Manager {
     pub(crate) box_domain: String,
-    deployments: Arc<RwLock<DeploymentMap>>,
+    deployments: Arc<InstrumentedRwLock<DeploymentMap>>,
     build_worker: Arc<WorkerHandle>,
     github_worker: Arc<WorkerHandle>,
     docker_worker: Arc<WorkerHandle>,
@@ -30,13 +30,14 @@ pub(crate) struct Manager {
 // - build worker
 
 impl Manager {
+    #[tracing::instrument]
     pub(crate) fn new(
         box_domain: String,
         github: Github,
         db: Db,
         certificates: CertificateStore,
     ) -> Self {
-        let deployments: Arc<_> = RwLock::new(DeploymentMap::new(certificates)).into();
+        let deployments: Arc<_> = InstrumentedRwLock::new(DeploymentMap::new(certificates)).into();
 
         // TODO: add docker or clean worker and trigger it at the end of the deployment worker flow
 
@@ -86,6 +87,7 @@ impl Manager {
         manager
     }
 
+    #[tracing::instrument]
     pub(crate) async fn get_container_by_hostname(&self, hostname: &str) -> Option<Arc<Container>> {
         let container = self
             .deployments
@@ -103,6 +105,7 @@ impl Manager {
         }
     }
 
+    #[tracing::instrument]
     async fn get_container_by_label(&self, label: Label) -> Option<Arc<Container>> {
         let map = self.deployments.read().await;
         match &label {
@@ -127,6 +130,7 @@ impl Manager {
         }
     }
 
+    #[tracing::instrument]
     pub(crate) async fn get_deployment(&self, id: i64) -> Option<RwLockReadGuard<Deployment>> {
         let map = self.deployments.read().await;
         RwLockReadGuard::try_map(map, |map| {
@@ -139,6 +143,7 @@ impl Manager {
         .ok()
     }
 
+    #[tracing::instrument]
     pub(crate) async fn get_prod_deployment(
         &self,
         project: i64,
@@ -151,11 +156,13 @@ impl Manager {
         .ok()
     }
 
+    #[tracing::instrument]
     pub(crate) async fn get_prod_url_id(&self, project: i64) -> Option<String> {
         let map = self.deployments.read().await;
         Some(map.prod.get(&project)?.to_owned())
     }
 
+    #[tracing::instrument]
     pub(crate) async fn sync_with_db(&self) {
         self.deployments
             .write()
@@ -167,8 +174,53 @@ impl Manager {
     }
 
     /// this triggers all the sync workflows downstream
+    #[tracing::instrument]
     pub(crate) async fn full_sync_with_github(&self) {
         self.github_worker.trigger_and_wait().await;
         self.sync_with_db().await;
+    }
+}
+
+#[derive(Debug)]
+pub struct InstrumentedRwLock<T> {
+    inner: RwLock<T>,
+}
+
+impl<T> InstrumentedRwLock<T> {
+    pub fn new(data: T) -> Self {
+        Self {
+            inner: RwLock::new(data),
+        }
+    }
+
+    pub async fn read(&self) -> tokio::sync::RwLockReadGuard<'_, T> {
+        // let access = now();
+        // let backtrace: String = Backtrace::force_capture()
+        //     .to_string()
+        //     .lines()
+        //     .take(4)
+        //     .collect::<Vec<_>>()
+        //     .join("\n");
+        // println!("Acquiring read guard for access {}:\n{}", access, backtrace);
+        let guard = self.inner.read().await;
+        // println!("Read guard acquired for access {}", access);
+        guard
+    }
+
+    pub async fn write(&self) -> tokio::sync::RwLockWriteGuard<'_, T> {
+        // let access = now();
+        // let backtrace: String = Backtrace::force_capture()
+        //     .to_string()
+        //     .lines()
+        //     .take(4)
+        //     .collect::<Vec<_>>()
+        //     .join("\n");
+        // println!(
+        //     "Acquiring write guard for access {}:\n{}",
+        //     access, backtrace
+        // );
+        let guard = self.inner.write().await;
+        // println!("Write guard acquired for access {}", access);
+        guard
     }
 }

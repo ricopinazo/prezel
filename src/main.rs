@@ -5,11 +5,8 @@ use deployments::manager::Manager;
 use github::Github;
 use proxy::run_proxy;
 use tls::CertificateStore;
-use tracing_subscriber::{
-    layer::{Filter, SubscriberExt},
-    util::SubscriberInitExt,
-    EnvFilter, Layer, Registry,
-};
+use traces::init_tracing_subscriber;
+use tracing::info;
 
 mod alphabet;
 mod api;
@@ -28,42 +25,37 @@ mod paths;
 mod proxy;
 mod time;
 mod tls;
+mod traces;
 
 pub(crate) const DOCKER_PORT: u16 = 5046;
 
-struct DeploymentFilter;
+// struct DeploymentFilter;
 
-impl Filter<Registry> for DeploymentFilter {
-    fn enabled(
-        &self,
-        meta: &tracing::Metadata<'_>,
-        _ctx: &tracing_subscriber::layer::Context<'_, Registry>,
-    ) -> bool {
-        meta.fields().field("deployment").is_some() // TODO: rename this field to prezel?
-    }
-}
+// impl Filter<Registry> for DeploymentFilter {
+//     fn enabled(
+//         &self,
+//         meta: &tracing::Metadata<'_>,
+//         _ctx: &tracing_subscriber::layer::Context<'_, Registry>,
+//     ) -> bool {
+//         meta.fields().field("deployment").is_some() // TODO: rename this field to prezel?
+//     }
+// }
 
 #[tokio::main]
 async fn main() {
-    // TODO: sort all of this tracing conf
-    // TODO: remove tracing_appender dep
-    // let file_appender = tracing_appender::rolling::hourly("/opt/prezel/log", "prezel.log");
-    // let json_layer = tracing_subscriber::fmt::layer()
-    //     .json()
-    //     .with_writer(file_appender)
-    //     .with_filter(DeploymentFilter);
+    let _guard = init_tracing_subscriber();
+    info!("prezel is starting...");
 
-    let stdout_layer = tracing_subscriber::fmt::layer()
-        .pretty()
-        .with_writer(std::io::stdout)
-        .with_filter(EnvFilter::new("info")); // TODO: read from env
-
-    // env_logger::init_from_env(env_logger::Env::new().default_filter_or("info")); -> old version
-
-    tracing_subscriber::registry()
-        // .with(json_layer)
-        .with(stdout_layer)
-        .init();
+    // old tracing conf
+    /////////////////////////////////////////////////////////////////
+    // let stdout_layer = tracing_subscriber::fmt::layer()
+    //     .pretty()
+    //     .with_writer(std::io::stdout)
+    //     .with_filter(EnvFilter::new("info")); // TODO: read from env
+    // tracing_subscriber::registry()
+    //     .with(stdout_layer)
+    //     .init();
+    /////////////////////////////////////////////////////////////////
 
     let conf = Conf::read();
     let cloned_conf = conf.clone();

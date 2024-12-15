@@ -15,9 +15,8 @@ CREATE TABLE IF NOT EXISTS deployments (
     created INTEGER NOT NULL,
     env TEXT NOT NULL,
     sha TEXT NOT NULL,
-    branch TEXT, -- if NULL means this comes from the default branch
-    -- TODO: replace pr with branch
-    -- build TEXT,
+    branch TEXT NOT NULL,
+    default_branch INTEGER NOT NULL, -- 0 false 1 true
     build_started INTEGER,
     build_finished INTEGER,
     result TEXT,
