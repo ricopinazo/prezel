@@ -8,10 +8,10 @@ use std::{
 use account::{create_new_account, persist_credentials, read_account};
 use certificate::TlsCertificate;
 use instant_acme::{Account, ChallengeType, LetsEncrypt};
-use log::info;
 use registration::{
     generate_certificate_and_persist, read_or_generate_default_certificate_and_persist,
 };
+use tracing::info;
 
 use crate::conf::Conf;
 

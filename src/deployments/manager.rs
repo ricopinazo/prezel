@@ -176,9 +176,7 @@ impl Manager {
     /// this triggers all the sync workflows downstream
     #[tracing::instrument]
     pub(crate) async fn full_sync_with_github(&self) {
-        dbg!();
         self.github_worker.trigger_and_wait().await;
-        dbg!();
         self.sync_with_db().await;
     }
 }
@@ -196,35 +194,33 @@ impl<T> InstrumentedRwLock<T> {
     }
 
     pub async fn read(&self) -> tokio::sync::RwLockReadGuard<'_, T> {
-        let access = now();
-        let backtrace: String = Backtrace::force_capture()
-            .to_string()
-            .lines()
-            .take(4)
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        println!("Acquiring read guard for access {}:\n{}", access, backtrace);
+        // let access = now();
+        // let backtrace: String = Backtrace::force_capture()
+        //     .to_string()
+        //     .lines()
+        //     .take(4)
+        //     .collect::<Vec<_>>()
+        //     .join("\n");
+        // println!("Acquiring read guard for access {}:\n{}", access, backtrace);
         let guard = self.inner.read().await;
-        println!("Read guard acquired for access {}", access);
+        // println!("Read guard acquired for access {}", access);
         guard
     }
 
     pub async fn write(&self) -> tokio::sync::RwLockWriteGuard<'_, T> {
-        let access = now();
-        let backtrace: String = Backtrace::force_capture()
-            .to_string()
-            .lines()
-            .take(4)
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        println!(
-            "Acquiring write guard for access {}:\n{}",
-            access, backtrace
-        );
+        // let access = now();
+        // let backtrace: String = Backtrace::force_capture()
+        //     .to_string()
+        //     .lines()
+        //     .take(4)
+        //     .collect::<Vec<_>>()
+        //     .join("\n");
+        // println!(
+        //     "Acquiring write guard for access {}:\n{}",
+        //     access, backtrace
+        // );
         let guard = self.inner.write().await;
-        println!("Write guard acquired for access {}", access);
+        // println!("Write guard acquired for access {}", access);
         guard
     }
 }

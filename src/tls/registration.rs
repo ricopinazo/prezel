@@ -3,12 +3,12 @@ use instant_acme::{
     Account, AuthorizationStatus, Challenge, ChallengeType, Identifier, KeyAuthorization, NewOrder,
     Order, OrderStatus,
 };
-use log::info;
 use pingora::tls;
 use rcgen::{CertificateParams, DistinguishedName, KeyPair};
 use serde::Deserialize;
 use std::{future::Future, sync::Arc, time::Duration};
 use tokio::time::sleep;
+use tracing::info;
 
 use super::certificate::{write_certificate_to_disk, TlsCertificate};
 use crate::conf::Conf;

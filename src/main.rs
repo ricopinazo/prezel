@@ -6,6 +6,7 @@ use github::Github;
 use proxy::run_proxy;
 use tls::CertificateStore;
 use traces::init_tracing_subscriber;
+use tracing::info;
 
 mod alphabet;
 mod api;
@@ -43,6 +44,7 @@ pub(crate) const DOCKER_PORT: u16 = 5046;
 #[tokio::main]
 async fn main() {
     let _guard = init_tracing_subscriber();
+    info!("prezel is starting...");
 
     // old tracing conf
     /////////////////////////////////////////////////////////////////

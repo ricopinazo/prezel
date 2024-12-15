@@ -2,7 +2,6 @@ use anyhow::ensure;
 use flate2::read::GzDecoder;
 use http::StatusCode;
 use http_body_util::BodyExt;
-use log::info;
 use octocrab::{
     models::{pulls::PullRequest, InstallationRepositories, IssueState, Repository},
     params::{
@@ -15,6 +14,7 @@ use serde::Serialize;
 use std::{io::Cursor, path::Path, sync::Arc};
 use tar::Archive;
 use tokio::sync::RwLock;
+use tracing::info;
 
 use crate::{conf::Conf, time::now};
 

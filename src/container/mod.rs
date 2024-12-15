@@ -191,9 +191,7 @@ impl Container {
         };
 
         if let Some(new_status) = new_status {
-            dbg!();
             *self.status.write().await = new_status;
-            dbg!();
         }
     }
 

@@ -1,4 +1,5 @@
 use opentelemetry::{global, trace::TracerProvider as _, KeyValue};
+use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{
     metrics::{MeterProviderBuilder, PeriodicReader, SdkMeterProvider},
     runtime,
@@ -59,6 +60,7 @@ fn init_meter_provider() -> SdkMeterProvider {
 fn init_tracer_provider() -> TracerProvider {
     let exporter = opentelemetry_otlp::SpanExporter::builder()
         .with_tonic()
+        .with_endpoint("http://jaeger:4317")
         .build()
         .unwrap();
 
@@ -92,7 +94,9 @@ pub(crate) fn init_tracing_subscriber() -> OtelGuard {
         .with(tracing_subscriber::filter::LevelFilter::from_level(
             Level::INFO,
         ))
-        .with(tracing_subscriber::fmt::layer())
+        .with(
+            tracing_subscriber::fmt::layer(), // .with_writer(std::io::stdout)
+        )
         .with(MetricsLayer::new(meter_provider.clone()))
         .with(OpenTelemetryLayer::new(tracer))
         .init();

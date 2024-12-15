@@ -2967,7 +2967,6 @@ dependencies = [
  "http-body-util",
  "hyper 1.4.1",
  "instant-acme",
- "log",
  "nanoid",
  "nixpacks",
  "octocrab",
