@@ -28,11 +28,6 @@ secrecy = "0.8.0"
 http-body-util = "0.1.2"
 tar = "0.4.41"
 flate2 = "1.0.30"
-# tracing-subscriber = { version = "0.3.18", features = [
-#     "json",
-#     "fmt",
-#     "env-filter",
-# ] }
 chrono = "0.4.38"
 anyhow = "1.0.86"
 hyper = { version = "1.4.1", features = [
@@ -56,23 +51,12 @@ utoipa = { version = "4.2.3", features = ["actix_extras"] }
 utoipa-rapidoc = { version = "4.0.0", features = ['actix-web'] }
 actix-cors = "0.7.0"
 env_logger = "0.11.5"
-# log = "0.4.22"
-# tracing = "0.1.40"
 tracing-appender = "0.2.3"
 file-rotate = "0.7.6"
 rand = "0.8.5"
 tempfile = "3.14.0"
-# opentelemetry = "0.27.1"
-# opentelemetry_sdk = { version = "0.27.1" }
-# opentelemetry-semantic-conventions = "0.27.0"
-# opentelemetry-otlp = "0.27.0"
-# tracing-opentelemetry = "0.28.0"
-
-# this comes from tracing_opentelemetry example: https://github.com/tokio-rs/tracing-opentelemetry/blob/v0.1.x/examples/opentelemetry-otlp.rs
 tracing-opentelemetry = "0.28.0"
 tracing-core = "0.1.28"
-
-# these come from dev dependencies
 opentelemetry = { version = "0.27.0", features = ["trace", "metrics"] }
 opentelemetry_sdk = { version = "0.27.0", default-features = false, features = [
     "trace",
@@ -83,9 +67,6 @@ opentelemetry-otlp = { version = "0.27.0", features = ["metrics"] }
 opentelemetry-semantic-conventions = { version = "0.27.0", features = [
     "semconv_experimental",
 ] }
-# futures-util = { version = "0.3.17", default-features = false }
-# tokio = { version = "1", features = ["full"] }
-# tokio-stream = "0.1"
 tracing = { version = "0.1.35", default-features = false, features = [
     "std",
     "attributes",
@@ -96,8 +77,8 @@ tracing-subscriber = { version = "0.3.0", default-features = false, features = [
     "registry",
     "std",
     "fmt",
-    "json",       # TODO check this
-    "env-filter", # TODO check this
+    # "json",       # TODO check this
+    # "env-filter", # TODO check this
 ] }
 
 
