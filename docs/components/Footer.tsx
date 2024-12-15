@@ -16,7 +16,7 @@ export const Footer = ({ menu, api }: { menu?: boolean; api?: boolean }) => {
     >
       <div
         className={cn(
-          "mx-auto flex max-w-[90rem] gap-2 py-2 px-4",
+          "mx-auto flex max-w-[90rem] gap-2 px-4 py-2",
           menu ? "flex" : "hidden",
         )}
       >
@@ -26,11 +26,11 @@ export const Footer = ({ menu, api }: { menu?: boolean; api?: boolean }) => {
       <hr className="dark:border-neutral-800" />
       <div
         className={cn(
-          "mx-auto flex max-w-[90rem] justify-center py-12 text-gray-600 dark:text-gray-400 md:justify-start",
+          "mx-auto flex max-w-[90rem] justify-center py-12 text-sm text-gray-600 md:justify-start dark:text-gray-400",
           "pl-[max(env(safe-area-inset-left),1.5rem)] pr-[max(env(safe-area-inset-right),1.5rem)]",
         )}
       >
-        New footer
+        © Prezel
       </div>
     </footer>
   );
