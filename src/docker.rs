@@ -8,7 +8,7 @@ use bollard::{
     },
     errors::Error as DockerError,
     image::BuildImageOptions,
-    secret::{BuildInfo, EndpointSettings, HostConfig},
+    secret::{BuildInfo, HostConfig},
     Docker as BollardDoker,
 };
 use chrono::{DateTime, Utc};
@@ -26,14 +26,11 @@ use nanoid::nanoid;
 use serde::Serialize;
 use std::{
     error::Error,
-    fmt::format,
     future::{self, Future},
     net::Ipv4Addr,
     path::Path,
     pin::Pin,
-    sync::Arc,
 };
-use tokio::sync::{Mutex, MutexGuard};
 use utoipa::ToSchema;
 
 use crate::{alphabet, env::EnvVars, paths::HostFile};
@@ -126,7 +123,12 @@ pub(crate) async fn create_container<'a, I: Iterator<Item = &'a HostFile>>(
     image: String,
     env: EnvVars,
     host_files: I,
+    command: Option<String>,
 ) -> anyhow::Result<String> {
+    let entrypoint = command
+        .is_some()
+        .then(|| vec!["sh".to_owned(), "-c".to_owned()]);
+    let cmd = command.map(|command| vec![command]);
     let docker = docker_client();
     let binds = host_files
         .map(|file| {
@@ -145,6 +147,8 @@ pub(crate) async fn create_container<'a, I: Iterator<Item = &'a HostFile>>(
             }),
             Config {
                 image: Some(image),
+                cmd,
+                entrypoint,
                 env: Some(env.into()),
                 host_config: Some(HostConfig {
                     binds: Some(binds),
@@ -382,9 +386,14 @@ mod docker_tests {
         // let image = image.inspect().await?;
         // let image_id = image.id.ok_or(anyhow!("Image not found"));
 
-        let container = create_container("busybox".to_owned(), Default::default(), [].into_iter())
-            .await
-            .unwrap();
+        let container = create_container(
+            "busybox".to_owned(),
+            Default::default(),
+            [].into_iter(),
+            None,
+        )
+        .await
+        .unwrap();
         run_container(&container).await.unwrap();
         let ip = get_bollard_container_ipv4(&container).await.unwrap();
 

@@ -1,6 +1,6 @@
 use std::{future::Future, sync::Arc};
 
-use futures::future::join_all;
+use futures::{future::join_all, StreamExt};
 use rand::seq::SliceRandom;
 use tokio::sync::RwLock;
 
@@ -47,23 +47,18 @@ impl BuildWorker {
     async fn get_container_to_build(&self) -> Option<Arc<Container>> {
         // this block helds this read guard
         let map = self.map.read().await;
-        // TODO: use stream
-        let futures = map.iter_containers().map(|container| async {
-            let status = container.status.read().await.clone();
-            (container, status)
-        });
-
-        let queued_containers = join_all(futures)
-            .await
-            .into_iter()
-            .filter_map(|(container, status)| {
+        let queued_containers = map
+            .iter_containers()
+            .filter_map(|container| async {
+                let status = container.status.read().await.clone();
                 if let ContainerStatus::Queued { trigger_access } = status {
                     Some((container, trigger_access))
                 } else {
                     None
                 }
             })
-            .collect::<Vec<_>>();
+            .collect::<Vec<_>>()
+            .await;
 
         let first_container_accessed = queued_containers
             .iter()

@@ -1,12 +1,15 @@
+use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::Arc;
 
+use futures::{stream, Stream, StreamExt};
+
 use crate::container::commit::CommitContainer;
-use crate::container::prisma::PrismaContainer;
 use crate::container::ContainerStatus;
 use crate::db::{BuildResult, Deployment as DbDeployment};
 use crate::deployment_hooks::StatusHooks;
-use crate::paths::HostFile;
+use crate::sqlite_db::ProdSqliteDb;
 use crate::{
     container::Container,
     db::{Db, DeploymentWithProject},
@@ -14,7 +17,6 @@ use crate::{
 };
 
 use super::label::Label;
-use super::manager::Manager;
 use super::worker::WorkerHandle;
 
 #[derive(Debug)]
@@ -32,17 +34,29 @@ pub(crate) struct Deployment {
     // pub(crate) prisma_hostname: String,
     pub(crate) forced_prod: bool, // TODO: review if im using this
     pub(crate) app_container: Arc<Container>, // FIXME: try to remove Arc, only needed to make access to socket/public generic
-    pub(crate) prisma_container: Arc<Container>,
+                                              // pub(crate) prisma_container: Arc<Container>,
 }
 
 impl Deployment {
-    fn get_all_containers(&self) -> impl Iterator<Item = &Container> {
-        [self.app_container.as_ref(), self.prisma_container.as_ref()].into_iter()
-    }
+    // async fn get_all_containers(&self) -> impl Iterator<Item = &Container> {
+
+    //     self.app_container.status.read().await.get_db_container();
+
+    //     [self.app_container.as_ref(), self.prisma_container.as_ref()].into_iter()
+    // }
 
     // TODO:  try to merge this with the one above?
-    pub(crate) fn iter_arc_containers(&self) -> impl Iterator<Item = Arc<Container>> {
-        [self.app_container.clone(), self.prisma_container.clone()].into_iter()
+    pub(crate) fn iter_arc_containers(&self) -> impl Stream<Item = Arc<Container>> + Send + '_ {
+        // let db_container = self.app_container.status.read().await.get_db_container();
+        // [Some(self.app_container.clone()), db_container]
+        //     .into_iter()
+        //     .filter_map(|container| container)
+
+        let containers: [Pin<Box<dyn Future<Output = Option<Arc<Container>>> + Send>>; 2] = [
+            Box::pin(async { Some(self.app_container.clone()) }),
+            Box::pin(async { self.app_container.status.read().await.get_db_container() }),
+        ];
+        stream::iter(containers).filter_map(|container| container)
     }
 
     pub(crate) fn new(
@@ -50,6 +64,7 @@ impl Deployment {
         build_queue: WorkerHandle,
         github: Github,
         db: Db,
+        project_db: &ProdSqliteDb,
     ) -> Self {
         let DeploymentWithProject {
             deployment,
@@ -68,21 +83,6 @@ impl Deployment {
         } = deployment;
 
         let env = env.into();
-
-        let dbs_path = get_dbs_path(project.id);
-        let cloned_db_file = if default_branch {
-            None
-        } else {
-            let path = dbs_path.join(id.to_string());
-            Some(HostFile::new(path, "preview.db"))
-        };
-        let main_db_file = HostFile::new(dbs_path, "main.db");
-
-        // TODO: this boilerplate is also in CommitContainer::new()
-        let db_file = cloned_db_file
-            .clone()
-            .unwrap_or_else(|| main_db_file.clone());
-
         let hooks = StatusHooks::new(db, id);
 
         let (inistial_status, build_result) = match deployment.result {
@@ -96,6 +96,8 @@ impl Deployment {
             ),
         };
 
+        let is_branch_deployment = !default_branch;
+        let is_public = default_branch;
         let commit_container = CommitContainer::new(
             build_queue.clone(),
             hooks,
@@ -105,13 +107,13 @@ impl Deployment {
             id,
             env,
             project.root.clone(),
-            default_branch, // public
-            main_db_file,
-            cloned_db_file,
+            is_branch_deployment,
+            is_public,
+            project_db,
             inistial_status,
             build_result,
         );
-        let prisma_container = PrismaContainer::new(db_file, build_queue);
+        // let prisma_container = PrismaContainer::new(db_file, build_queue);
 
         Self {
             branch,
@@ -124,7 +126,7 @@ impl Deployment {
             created,
             forced_prod: project.prod_id.is_some_and(|prod_id| id == prod_id),
             app_container: commit_container.into(),
-            prisma_container: prisma_container.into(),
+            // prisma_container: prisma_container.into(),
         }
     }
 
@@ -144,14 +146,20 @@ impl Deployment {
     }
 
     pub(crate) fn get_db_hostname(&self, box_domain: &str, project_name: &str) -> String {
-        Label::Db {
-            project: project_name.to_string(),
-            deployment: self.url_id.to_string(),
+        if self.default_branch {
+            Label::ProdDb {
+                project: project_name.to_string(),
+            }
+        } else {
+            Label::BranchDb {
+                project: project_name.to_string(),
+                deployment: self.url_id.to_string(),
+            }
         }
         .format_hostname(box_domain)
     }
 }
 
 fn get_dbs_path(project_id: i64) -> PathBuf {
-    Path::new("sqlite").join(project_id.to_string()) // FIXME: should use the id!!!!!!!!!!
+    Path::new("sqlite").join(project_id.to_string())
 }

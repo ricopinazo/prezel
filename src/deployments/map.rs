@@ -1,14 +1,16 @@
 use std::{
     collections::{HashMap, HashSet},
+    future::Future,
     sync::Arc,
 };
 
-use futures::{stream, StreamExt};
+use futures::{stream, Stream, StreamExt};
 
 use crate::{
     container::{Container, ContainerStatus},
     db::{BuildResult, Db},
     github::Github,
+    sqlite_db::ProdSqliteDb,
     tls::CertificateStore,
 };
 
@@ -16,6 +18,7 @@ use super::{deployment::Deployment, worker::WorkerHandle};
 
 #[derive(Debug)]
 pub(crate) struct DeploymentMap {
+    pub(crate) dbs: HashMap<i64, ProdSqliteDb>,
     /// FIXME: this having a tuple (i64, String) as the key means every time I access I need to clone a String. There has to be another way
     pub(crate) deployments: HashMap<(i64, String), Deployment>,
     /// values here used to be options, but removing them from the map should be enough
@@ -29,6 +32,7 @@ pub(crate) struct DeploymentMap {
 impl DeploymentMap {
     pub(crate) fn new(store: CertificateStore) -> Self {
         Self {
+            dbs: Default::default(),
             deployments: Default::default(),
             prod: Default::default(),
             names: Default::default(),
@@ -36,14 +40,11 @@ impl DeploymentMap {
             certificates: store,
         }
     }
-    pub(crate) fn iter_containers(&self) -> impl Iterator<Item = Arc<Container>> + '_ {
-        self.deployments.iter().flat_map(|(_, deployment)| {
-            [
-                deployment.app_container.clone(),
-                deployment.prisma_container.clone(),
-            ] // FIXME: use here iter_arc_containers
-            .into_iter()
-        })
+
+    // TODO: turn this output into a stream maybe?
+    pub(crate) fn iter_containers(&self) -> impl Stream<Item = Arc<Container>> + Send + '_ {
+        stream::iter(self.deployments.iter())
+            .flat_map(|(_, deployment)| deployment.iter_arc_containers())
     }
 
     pub(crate) fn get_deployment(&self, project: &str, deployment: &str) -> Option<&Deployment> {
@@ -59,6 +60,13 @@ impl DeploymentMap {
     pub(crate) fn get_prod(&self, project: &str) -> Option<&Deployment> {
         let project_id = self.names.get(project)?;
         self.get_prod_from_id(*project_id)
+    }
+
+    pub(crate) fn get_prod_db(&self, project: &str) -> Option<Arc<Container>> {
+        let project_id = self.names.get(project)?;
+        self.dbs
+            .get(project_id)
+            .map(|db| db.setup.container.clone())
     }
 
     pub(crate) fn get_custom_domain(&self, domain: &str) -> Option<&Deployment> {
@@ -102,6 +110,17 @@ impl DeploymentMap {
             })
             .collect();
 
+        // sync map.dbs
+        for (project_id, _) in &projects {
+            if !self.dbs.contains_key(&project_id) {
+                // TODO: remove unwrap
+                self.dbs.insert(
+                    *project_id,
+                    ProdSqliteDb::new(*project_id, build_queue.clone()).unwrap(),
+                );
+            }
+        }
+
         // sync map.certificates
         let required_certificates = self.custom_domains.keys();
         for domain in required_certificates {
@@ -119,9 +138,18 @@ impl DeploymentMap {
             {
                 let project = deployment.project.id;
                 let url_id = deployment.deployment.url_id.clone();
-                let deployment =
-                    Deployment::new(deployment, build_queue.clone(), github.clone(), db.clone());
-                self.deployments.insert((project, url_id), deployment);
+                if let Some(prod_db) = self.dbs.get(&project) {
+                    let deployment = Deployment::new(
+                        deployment,
+                        build_queue.clone(),
+                        github.clone(),
+                        db.clone(),
+                        prod_db,
+                    );
+                    self.deployments.insert((project, url_id), deployment);
+                } else {
+                    panic!("illegal state, no prod bd found for deployment"); // TODO: remove this panic, make it imposible
+                }
             }
         }
         let existing_ids = self.deployments.keys().cloned().collect::<Vec<_>>();
@@ -228,23 +256,32 @@ impl DeploymentMap {
             .filter_map(|project| self.get_prod(project))
     }
 
-    async fn get_all_non_prod_containers(&self) -> Vec<Arc<Container>> {
+    // TODO: once I get this to be Send, change signature back to async fn ...
+    fn get_all_non_prod_containers(&self) -> impl Future<Output = Vec<Arc<Container>>> + Send + '_ {
         let prod_deployment_ids = self
             .iter_prod_deployments()
             .map(|deployment| deployment.id)
             .collect::<Vec<_>>();
-        let all_containers_from_non_prod_deployments = self
-            .deployments
-            .values()
-            .filter(|deployment| !prod_deployment_ids.contains(&deployment.id))
-            .flat_map(|deployment| deployment.iter_arc_containers());
+        let all_containers_from_non_prod_deployments = stream::iter(
+            self.deployments
+                .values()
+                .filter(move |deployment| !prod_deployment_ids.contains(&deployment.id)),
+        )
+        .flat_map(|deployment| deployment.iter_arc_containers());
 
-        let prisma_containers_from_prod_deployments = self
-            .iter_prod_deployments()
-            .map(|deployment| deployment.prisma_container.clone());
+        let db_containers_from_prod_deployments = stream::iter(self.iter_prod_deployments())
+            .filter_map(|deployment| async {
+                // FIXME: some boilerplate here, could have deployment.get_db_container
+                deployment
+                    .app_container
+                    .status
+                    .read()
+                    .await
+                    .get_db_container()
+            });
 
         all_containers_from_non_prod_deployments
-            .chain(prisma_containers_from_prod_deployments)
+            .chain(db_containers_from_prod_deployments)
             .collect()
     }
 }

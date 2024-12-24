@@ -23,6 +23,7 @@ mod listener;
 mod logging;
 mod paths;
 mod proxy;
+mod sqlite_db;
 mod time;
 mod tls;
 mod traces;

@@ -4,19 +4,21 @@ use anyhow::ensure;
 #[derive(Debug)]
 pub(crate) enum Label {
     Prod { project: String },
+    ProdDb { project: String },
     Deployment { project: String, deployment: String },
-    Db { project: String, deployment: String },
+    BranchDb { project: String, deployment: String },
 }
 
 impl Label {
     pub(crate) fn format_hostname(&self, box_domain: &str) -> String {
         match self {
             Label::Prod { project } => format!("{project}.{box_domain}"),
+            Label::ProdDb { project } => format!("{project}-db.{box_domain}"),
             Label::Deployment {
                 project,
                 deployment,
             } => format!("{project}-{deployment}.{box_domain}"),
-            Label::Db {
+            Label::BranchDb {
                 project,
                 deployment,
             } => format!("{project}-{deployment}-db.{box_domain}"),
@@ -38,8 +40,8 @@ impl Label {
 }
 
 fn parse_label(label: &str) -> Vec<Label> {
-    let parsed = match label.split("-").collect::<Vec<_>>().as_slice() {
-        [project @ .., deployment, "db"] => Some(Label::Db {
+    let deployment_label = match label.split("-").collect::<Vec<_>>().as_slice() {
+        [project @ .., deployment, "db"] => Some(Label::BranchDb {
             project: project.join("-"),
             deployment: deployment.to_string(),
         }),
@@ -50,13 +52,19 @@ fn parse_label(label: &str) -> Vec<Label> {
         _ => None,
     };
 
-    let production_label = Label::Prod {
+    let prod_db_label = match label.split("-").collect::<Vec<_>>().as_slice() {
+        [project @ .., "db"] => Some(Label::ProdDb {
+            project: project.join("-"),
+        }),
+        _ => None,
+    };
+
+    let prod_label = Label::Prod {
         project: label.to_owned(),
     };
 
-    if let Some(parsed) = parsed {
-        vec![production_label, parsed]
-    } else {
-        vec![production_label]
-    }
+    [Some(prod_label), prod_db_label, deployment_label]
+        .into_iter()
+        .filter_map(|label| label)
+        .collect()
 }

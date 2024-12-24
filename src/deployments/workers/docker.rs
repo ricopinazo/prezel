@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use futures::StreamExt;
 use tokio::sync::RwLock;
 
 use crate::{
@@ -31,7 +32,9 @@ impl Worker for DockerWorker {
 
 impl DockerWorker {
     async fn is_container_in_use(&self, id: &String) -> bool {
-        for container in self.map.read().await.iter_containers() {
+        let map = self.map.read().await;
+        let mut containers = map.iter_containers();
+        while let Some(container) = containers.next().await {
             if container.get_container_id().await.as_ref() == Some(id) {
                 return true;
             }

@@ -120,13 +120,15 @@ impl Manager {
                 let deployment = map.get_deployment(project, deployment)?;
                 Some(deployment.app_container.clone())
             }
-            Label::Db {
+            Label::BranchDb {
                 project,
                 deployment,
             } => {
                 let deployment = map.get_deployment(project, deployment)?;
-                Some(deployment.prisma_container.clone())
+                let status = &deployment.app_container.status;
+                status.read().await.get_db_container()
             }
+            Label::ProdDb { project } => map.get_prod_db(project),
         }
     }
 
