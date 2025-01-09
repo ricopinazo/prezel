@@ -5,9 +5,10 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions-rs/toolchain@v1
+      - uses: Swatinem/rust-cache@v2
         with:
-          toolchain: stable
+          cache-all-crates: true
+
       - run: cargo install --version 0.7.4 sqlx-cli
 
       - uses: actions/checkout@v4

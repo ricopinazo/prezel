@@ -1,6 +1,5 @@
 use anyhow::{anyhow, bail};
 use async_trait::async_trait;
-use http::StatusCode;
 use std::{
     fmt,
     future::Future,
@@ -11,9 +10,9 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::{sync::RwLock, time::sleep};
+use tracing::error;
 
 use crate::{
-    // db::Status,
     api::Status,
     db::BuildResult,
     deployment_hooks::DeploymentHooks,
@@ -230,6 +229,7 @@ impl Container {
                 *self.result.write().await = Some(BuildResult::Built);
             }
             Err(error) => {
+                error!("{}", error);
                 self.hooks.on_build_failed().await;
                 *self.status.write().await = ContainerStatus::Failed;
                 *self.result.write().await = Some(BuildResult::Failed);
