@@ -8,7 +8,10 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - run: cargo install --version 0.7.4 sqlx-cli
+      - name: install sqlx-cli
+        run: |
+          sudo wget https://github.com/ivy-net/sqlx/releases/download/v0.8.2/sqlx-cli-v0.8.2.x86_64-unknown-linux-musl -O /usr/local/bin/sqlx
+          sudo chmod +x /usr/local/bin/sqlx
 
       - uses: actions/checkout@v4
         with:
