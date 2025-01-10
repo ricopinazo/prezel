@@ -16,11 +16,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: main
-      - run: DATABASE_URL=sqlite:/tmp/old-db sqlx database create
-      - run: DATABASE_URL=sqlite:/tmp/old-db sqlx migrate run
+      - run: DATABASE_URL=sqlite:/tmp/old-db sqlx sqlx database create
+      - run: DATABASE_URL=sqlite:/tmp/old-db sqlx sqlx migrate run
 
       - uses: actions/checkout@v4
-      - run: DATABASE_URL=sqlite:/tmp/old-db sqlx migrate run
+      - run: DATABASE_URL=sqlite:/tmp/old-db sqlx sqlx migrate run
 
       - uses: Swatinem/rust-cache@v2
         with:
