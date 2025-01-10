@@ -39,14 +39,11 @@ const messages = await db.select().from(Message).orderBy(desc(Message.created));
             <section id="hero" class="h-full flex flex-col items-center pt-40 pb-10 gap-8 overflow-hidden">
                 <div class="flex gap-4 items-center">
                     <a href="https://astro.build">
-                        <img src={astroLogo.src} class="h-20" alt="Astro Homepage" />
+                        <img src={astroLogo.src} class="h-16" alt="Astro Homepage" />
                     </a>
                     <span class="text-xl">💛</span>
-                    <!-- <a href="https://prezel.app" class="flex items-center gap-2"> -->
                     <a href="https://prezel.app">
-                        <use href="https://prezel.app/icon.svg" class="h-20" style="--color_fill: #000;"></use>
-                        <!-- <img src="https://prezel.app/icon.svg" class="h-20" alt="Prezel Homepage" /> -->
-                        <!-- <span class="text-xl">prezel</span> -->
+                        <img src="https://prezel.app/icon.svg" class="h-16 invert" alt="Prezel Homepage" />
                     </a>
                 </div>
                 <p class="text-gray-600">Say hello to the self-hosting Astro community!</p>
