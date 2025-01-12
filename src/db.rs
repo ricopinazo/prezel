@@ -460,11 +460,15 @@ impl Db {
             .unwrap();
     }
 
-    pub(crate) async fn hash_exists(&self, sha: &str) -> bool {
-        sqlx::query!("select id from deployments where deployments.sha=?", sha)
-            .fetch_optional(&self.conn)
-            .await
-            .unwrap()
-            .is_some()
+    pub(crate) async fn hash_exists_for_project(&self, sha: &str, project: i64) -> bool {
+        sqlx::query!(
+            "select id from deployments where deployments.sha=? and deployments.project=?",
+            sha,
+            project
+        )
+        .fetch_optional(&self.conn)
+        .await
+        .unwrap()
+        .is_some()
     }
 }
