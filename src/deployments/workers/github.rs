@@ -85,7 +85,10 @@ async fn get_default_branch_and_latest_commit(
 }
 
 async fn add_deployment_to_db_if_missing(db: &Db, deployment: InsertDeployment) {
-    if !db.hash_exists(&deployment.sha).await {
+    if !db
+        .hash_exists_for_project(&deployment.sha, deployment.project)
+        .await
+    {
         db.insert_deployment(deployment).await
     }
 }
