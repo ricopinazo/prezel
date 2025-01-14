@@ -3,17 +3,15 @@ use std::{
     fmt::Debug,
     ops::Deref,
     sync::{Arc, RwLock},
+    time::Duration,
 };
 
 use account::{create_new_account, persist_credentials, read_account};
 use certificate::TlsCertificate;
 use instant_acme::{Account, ChallengeType, LetsEncrypt};
-use registration::{
-    generate_certificate_and_persist, read_or_generate_default_certificate_and_persist,
-};
-use tracing::info;
+use registration::{generate_certificate_and_persist, generate_default_certificate_and_persist};
 
-use crate::conf::Conf;
+use crate::{conf::Conf, time::now_in_seconds};
 
 mod account;
 pub(crate) mod certificate;
@@ -57,8 +55,9 @@ impl<T> From<T> for IgnoreDebug<T> {
 #[derive(Clone, Debug)]
 pub(crate) struct CertificateStore {
     account: IgnoreDebug<Account>,
-    default: TlsCertificate,
+    default: Arc<RwLock<TlsCertificate>>,
     domains: Arc<RwLock<HashMap<String, TlsState>>>,
+    conf: Conf,
 }
 
 impl CertificateStore {
@@ -71,9 +70,10 @@ impl CertificateStore {
     }
 
     pub(crate) fn get_default_certificate(&self) -> TlsCertificate {
-        self.default.clone()
+        self.default.read().unwrap().clone()
     }
 
+    /// load certificates from disk, generate any missing, and sets up a task to renew them
     pub(crate) async fn load(conf: &Conf) -> Self {
         let account = match read_account().await {
             Ok(account) => account,
@@ -84,13 +84,29 @@ impl CertificateStore {
                 account
             }
         };
-        let default =
-            read_or_generate_default_certificate_and_persist(&account, conf.clone()).await;
-        Self {
+        let wildcard_domain = conf.wildcard_domain();
+        let default = match TlsCertificate::load_from_disk(wildcard_domain).await {
+            Ok(certificate) => certificate,
+            _ => generate_default_certificate_and_persist(&account, conf.clone()).await,
+        };
+
+        let store = Self {
             account: account.into(),
-            default,
+            default: RwLock::new(default).into(),
             domains: Default::default(),
-        }
+            conf: conf.clone(),
+        };
+
+        let cloned_store = store.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(24 * 3600)); // Every 1 day
+            loop {
+                interval.tick().await;
+                cloned_store.renew().await;
+            }
+        });
+
+        store
     }
 
     pub(crate) fn insert_domain(&self, domain: String) {
@@ -99,52 +115,80 @@ impl CertificateStore {
         let cloned_domain = domain.clone();
 
         tokio::spawn(async move {
-            let certificate = generate_certificate_and_persist(
-                &account,
-                domain.clone(),
-                ChallengeType::Http01,
-                |challenge| {
-                    let challenge_file = challenge.get_http_file_name();
-                    let challenge_content = challenge.get_http_file_content();
-                    domains.write().unwrap().insert(
-                        cloned_domain,
-                        TlsState::Challenge {
-                            challenge_file,
-                            challenge_content,
+            let certificate = match TlsCertificate::load_from_disk(domain.clone()).await {
+                Ok(certificate) => certificate,
+                _ => {
+                    generate_certificate_and_persist(
+                        &account,
+                        domain.clone(),
+                        ChallengeType::Http01,
+                        |challenge| {
+                            let challenge_file = challenge.get_http_file_name();
+                            let challenge_content = challenge.get_http_file_content();
+                            domains.write().unwrap().insert(
+                                cloned_domain,
+                                TlsState::Challenge {
+                                    challenge_file,
+                                    challenge_content,
+                                },
+                            );
+                            async {}
                         },
-                    );
-                    async {}
-                },
-            )
-            .await;
+                    )
+                    .await
+                }
+            };
             domains
                 .write()
                 .unwrap()
                 .insert(domain, TlsState::Ready(certificate));
         });
     }
-}
 
-// pub(crate) async fn get_or_generate_tls_certificate(conf: &Conf) -> TlsCertificate {
-//     match read_stored_certificate() {
-//         Some(certificate) if certificate.hostname == conf.hostname => certificate,
-//         _ => {
-//             info!("stored certificate is not valid, requesting a new one");
-//             let account = match read_account().await {
-//                 Ok(account) => account,
-//                 Err(_) => {
-//                     let (account, credentials) =
-//                         create_new_account(LetsEncrypt::Production.url()).await;
-//                     persist_credentials(&credentials).await;
-//                     account
-//                 }
-//             };
-//             let certificate = generate_tls_certificate(account, conf).await;
-//             persist_certificate(&certificate);
-//             certificate
-//         }
-//     }
-// }
+    async fn renew(&self) {
+        // bear in mind that the intermidiate for a given certificate might change, so I need to read them back
+        let default = self.default.read().unwrap().clone();
+        if default.is_expiring_soon() {
+            let new_default =
+                generate_default_certificate_and_persist(&self.account, self.conf.clone()).await;
+            *self.default.write().unwrap() = new_default;
+        }
+
+        let domains = self.domains.read().unwrap().clone();
+        for (domain, state) in domains {
+            if let TlsState::Ready(cert) = state {
+                if cert.is_expiring_soon() {
+                    let new_cert = generate_certificate_and_persist(
+                        &self.account,
+                        domain.clone(),
+                        ChallengeType::Http01,
+                        |challenge| {
+                            let challenge_file = challenge.get_http_file_name();
+                            let challenge_content = challenge.get_http_file_content();
+                            self.domains.write().unwrap().insert(
+                                domain.clone(),
+                                TlsState::Challenge {
+                                    challenge_file,
+                                    challenge_content,
+                                },
+                            );
+                            async {}
+                        },
+                    )
+                    .await;
+                    // FIXME: during this period of time where the cert is back in Challenge state
+                    // any incoming requests will fail
+                    // maybe I should have a third state Renewing
+                    // where I still have access to the old certificate
+                    self.domains
+                        .write()
+                        .unwrap()
+                        .insert(domain, TlsState::Ready(new_cert));
+                }
+            }
+        }
+    }
+}
 
 #[cfg(test)]
 mod tls_tests {

@@ -15,7 +15,7 @@ use pingora::server::Server;
 use pingora::services::listening::Service;
 use pingora::tls::ssl::{NameType, SniError, SslContext, SslFiletype, SslMethod};
 use pingora::ErrorType::Custom;
-use pingora::{tls, Error, ErrorSource};
+use pingora::{Error, ErrorSource};
 use url::Url;
 
 use crate::api::API_PORT;
@@ -23,7 +23,6 @@ use crate::conf::Conf;
 use crate::deployments::manager::Manager;
 use crate::listener::{Access, Listener};
 use crate::logging::{Level, RequestLog, RequestLogger};
-use crate::paths::get_container_root;
 use crate::time::now;
 use crate::tls::{CertificateStore, TlsState};
 
@@ -244,24 +243,6 @@ fn logging(session: &Session, ctx: &RequestCtx, logger: &RequestLogger) -> Optio
     Some(())
 }
 
-// struct TlsCallback {
-//     certificate: TlsCertificate,
-// }
-
-// #[async_trait]
-// impl TlsAccept for TlsCallback {
-//     async fn certificate_callback(&self, ssl: &mut ssl::SslRef) {
-//         tls::ext::ssl_use_certificate(ssl, &self.certificate.cert).unwrap();
-//         tls::ext::ssl_use_private_key(ssl, &self.certificate.key).unwrap();
-
-//         //maybe this is enough
-//         // let servername = ssl.servername(NameType::HOST_NAME);
-
-//         // ssl.set_certificate(cert)?;
-//         // ssl.set_private_key(cert)?;
-//     }
-// }
-
 struct HttpHandler {
     pub(crate) certificates: CertificateStore,
 }
@@ -356,7 +337,6 @@ pub(crate) fn run_proxy(manager: Manager, config: Conf, store: CertificateStore)
                 for intermediate in certificate.intermediates {
                     ctx.add_extra_chain_cert(intermediate).unwrap();
                 }
-                // ctx.add_extra_chain_cert(cert)
                 // ctx.set_alpn_select_callback(prefer_h2);
                 let built = ctx.build();
                 ssl.set_ssl_context(&built)
