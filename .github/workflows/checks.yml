@@ -8,23 +8,22 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - run: whereis cargo
       - name: install sqlx-cli
         run: |
           sudo wget https://github.com/ivy-net/sqlx/releases/download/v0.8.2/sqlx-cli-v0.8.2.x86_64-unknown-linux-musl -O /home/runner/.cargo/bin/cargo-sqlx
           sudo chmod +x /home/runner/.cargo/bin/cargo-sqlx
-      - run: cargo sqlx --version
+
       # set up db using main configuration
       - uses: actions/checkout@v4
         with:
           ref: main
       # I have to invoke sqlx like this because the binary is actually kind of a cargo with the sqlx subcommand preinstalled
-      - run: DATABASE_URL=sqlite:/tmp/old-db sqlx sqlx database create
-      - run: DATABASE_URL=sqlite:/tmp/old-db sqlx sqlx migrate run
+      - run: cargo sqlx database create --database-url=/tmp/old-db
+      - run: cargo sqlx migrate run --database-url=/tmp/old-db
 
       # run a migrations againstdb from main
       - uses: actions/checkout@v4
-      - run: DATABASE_URL=sqlite:/tmp/old-db sqlx sqlx migrate run
+      - run: cargo sqlx migrate run --database-url=/tmp/old-db
 
       - uses: Swatinem/rust-cache@v2
         with:
