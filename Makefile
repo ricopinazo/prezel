@@ -4,13 +4,17 @@ db:
 	cargo sqlx prepare --database-url=sqlite:src.db
 	rm src.db
 
+openapi-hash:
+	@sha1sum docs/public/openapi.json
+
+openapi-check:
+	test "$(shell make openapi-hash)" = "$(shell make openapi > /dev/null 2> /dev/null && make openapi-hash)"
+
 openapi:
 	cp Cargo.toml /tmp/prezel-cargo.backup
 	echo '[[bin]]' >> Cargo.toml
 	echo 'name = "openapi"' >> Cargo.toml
 	echo 'path = "src/openapi.rs"' >> Cargo.toml
-	# the export PATH bit is just for vercel CLI to find cargo
-	# also OPENSSL_NO_VENDOR=1 is just for prezel to compile in vercel CI
 	cargo run --bin openapi || (make restore && false)
 	make restore
 
