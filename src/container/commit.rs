@@ -97,7 +97,6 @@ impl CommitContainer {
         )
     }
 
-    // TODO: rename this
     #[tracing::instrument]
     async fn build(&self, hooks: &Box<dyn DeploymentHooks>) -> anyhow::Result<BuildOutput> {
         let db_setup = if let Some(branch_db) = &self.branch_db {
@@ -130,6 +129,14 @@ impl CommitContainer {
 
         let inner_path = path.join(&self.root);
 
+        if !inner_path.join("Dockerfile").exists() {
+            self.create_dockerfile_with_nixpacks(&inner_path).await?;
+        }
+
+        Ok(inner_path)
+    }
+
+    async fn create_dockerfile_with_nixpacks(&self, inner_path: &Path) -> anyhow::Result<()> {
         let env_vec: Vec<String> = self.env.clone().into();
         create_docker_image(
             inner_path.to_str().unwrap(),
@@ -153,14 +160,13 @@ impl CommitContainer {
         )
         .await?;
 
-        // FIXME: what if there is a Dockerfile in the root folder of the project????
-        // maybe I shouldnt use nixpacks at all in the first place
         fs::rename(
             inner_path.join(".nixpacks").join("Dockerfile"),
             inner_path.join("Dockerfile"),
         )
         .await?;
-        Ok(inner_path)
+
+        Ok(())
     }
 }
 

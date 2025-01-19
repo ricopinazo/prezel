@@ -1,4 +1,3 @@
-.cargo
 *.pem
 target
 .DS_Store
