@@ -13,6 +13,7 @@ jobs:
           sudo wget https://github.com/ivy-net/sqlx/releases/download/v0.8.2/sqlx-cli-v0.8.2.x86_64-unknown-linux-musl -O /usr/local/bin/sqlx
           sudo chmod +x /usr/local/bin/sqlx
 
+      # set up db using main configuration
       - uses: actions/checkout@v4
         with:
           ref: main
@@ -20,10 +21,11 @@ jobs:
       - run: DATABASE_URL=sqlite:/tmp/old-db sqlx sqlx database create
       - run: DATABASE_URL=sqlite:/tmp/old-db sqlx sqlx migrate run
 
+      # run a migrations againstdb from main
       - uses: actions/checkout@v4
       - run: DATABASE_URL=sqlite:/tmp/old-db sqlx sqlx migrate run
 
       - uses: Swatinem/rust-cache@v2
         with:
           cache-all-crates: true
-      - run: cargo build
+      - run: make db && cargo build

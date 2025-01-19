@@ -1,4 +1,4 @@
-FROM rust:1.80.1 AS chef
+FROM rust:1.84.0 AS chef
 RUN cargo install cargo-chef --version 0.1.67
 WORKDIR /app
 
@@ -9,10 +9,11 @@ RUN cargo chef prepare  --recipe-path recipe.json
 FROM chef AS builder
 # FIXME: libssl-dev is only actually required for x86, skip for arm64
 RUN apt-get update && apt-get install -y cmake libssl-dev
+RUN cargo install sqlx-cli --version 0.8.2
 COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 COPY . .
-RUN cargo build --release
+RUN make db && cargo build --release
 
 # # FROM alpine:3.20.3
 FROM debian:bookworm-slim

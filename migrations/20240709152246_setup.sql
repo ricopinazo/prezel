@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS projects (
     name TEXT NOT NULL UNIQUE,
     repo_id TEXT NOT NULL,
     created INTEGER NOT NULL,
+    env TEXT NOT NULL,
     root TEXT NOT NULL,
     prod_id INTENGER -- deployment id used for prod
 );
@@ -12,6 +13,7 @@ CREATE TABLE IF NOT EXISTS deployments (
     url_id TEXT NOT NULL,
     timestamp INTEGER NOT NULL, -- this is the commit timestamp, used for sorting
     created INTEGER NOT NULL,
+    env TEXT NOT NULL,
     sha TEXT NOT NULL,
     branch TEXT NOT NULL,
     default_branch INTEGER NOT NULL, -- 0 false 1 true
