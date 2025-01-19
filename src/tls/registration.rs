@@ -12,7 +12,6 @@ use tokio::time::sleep;
 use super::certificate::{write_certificate_to_disk, TlsCertificate};
 use crate::conf::Conf;
 
-// TODO: need to somehow merge this and read_or_generate_default_certificate_and_persist
 pub(crate) async fn generate_default_certificate_and_persist(
     account: &Account,
     conf: Conf,
