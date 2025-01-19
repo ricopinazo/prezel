@@ -5,3 +5,5 @@ target
 docs/node_modules
 docs/.next
 docs/next-env.d.ts
+src.db
+.sqlx

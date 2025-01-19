@@ -1,5 +1,7 @@
 use std::{collections::HashMap, ops::Add};
 
+use crate::db::EnvVar;
+
 #[derive(Debug, Clone, Default)]
 pub(crate) struct EnvVars(HashMap<String, String>);
 
@@ -30,6 +32,13 @@ impl From<EnvVars> for HashMap<String, String> {
     }
 }
 
+impl From<Vec<EnvVar>> for EnvVars {
+    fn from(value: Vec<EnvVar>) -> Self {
+        let map = value.into_iter().map(|env| (env.name, env.value));
+        Self(map.collect())
+    }
+}
+
 impl From<HashMap<String, String>> for EnvVars {
     fn from(value: HashMap<String, String>) -> Self {
         Self(value)
@@ -54,32 +63,6 @@ impl From<EnvVars> for Vec<String> {
             .into_iter()
             .map(|(key, value)| format!("{key}={value}"))
             .collect()
-    }
-}
-
-impl From<&str> for EnvVars {
-    fn from(value: &str) -> Self {
-        value
-            .split("\n")
-            .map(|line| line.trim())
-            .filter(|&line| line != "")
-            .filter_map(parse_env)
-            .collect::<HashMap<String, String>>()
-            .into()
-    }
-}
-
-impl From<String> for EnvVars {
-    fn from(value: String) -> Self {
-        EnvVars::from(value.as_str())
-    }
-}
-
-fn parse_env(env: &str) -> Option<(String, String)> {
-    let tuple: Vec<_> = env.split("=").collect();
-    match tuple[..] {
-        [name, value] => Some((name.to_owned(), value.to_owned())),
-        _ => None,
     }
 }
 

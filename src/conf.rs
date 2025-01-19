@@ -3,7 +3,7 @@ use std::fs;
 
 use crate::paths::get_container_root;
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug)]
 pub(crate) struct Conf {
     pub(crate) token: String,
     pub(crate) hostname: String,
@@ -22,5 +22,9 @@ impl Conf {
     pub(crate) fn api_hostname(&self) -> String {
         // TODO: compute this in read() and add it as an additional field
         format!("api.{}", self.hostname)
+    }
+
+    pub(crate) fn wildcard_domain(&self) -> String {
+        format!("*.{}", self.hostname)
     }
 }

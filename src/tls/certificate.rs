@@ -4,10 +4,14 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use anyhow::ensure;
 use futures::{stream, StreamExt};
+use openssl::asn1::Asn1Time;
 use pingora::tls;
 
 use crate::paths::get_container_root;
+
+use super::now_in_seconds;
 
 #[derive(Debug, Clone)]
 pub(crate) struct TlsCertificate {
@@ -17,7 +21,7 @@ pub(crate) struct TlsCertificate {
     pub(crate) intermediates: Vec<tls::x509::X509>,
 }
 
-fn read_pem_from_path(path: &Path) -> anyhow::Result<tls::x509::X509> {
+pub(super) fn read_pem_from_path(path: &Path) -> anyhow::Result<tls::x509::X509> {
     Ok(tls::x509::X509::from_pem(&fs::read(&path)?)?)
 }
 
@@ -61,15 +65,18 @@ impl TlsCertificate {
         })
     }
 
-    // pub(crate) fn write_to_disk(&self) -> anyhow::Result<()> {
-    //     let cert = self.cert.to_pem()?;
-    //     fs::write(get_cert_path(&self.domain), cert)?;
-
-    //     let key = self.key.private_key_to_pem_pkcs8()?;
-    //     fs::write(get_key_path(&self.domain), key)?;
-
-    //     Ok(())
-    // }
+    pub(crate) fn is_expiring_soon(&self) -> bool {
+        // FIXME: remove these unwraps?
+        // maybe return true if there is an error reading?
+        if let Ok(cert) = read_pem_from_path(&Path::new(&self.cert)) {
+            let now = Asn1Time::from_unix(now_in_seconds()).unwrap();
+            let diff = now.diff(cert.not_after()).unwrap();
+            diff.days < 15
+        } else {
+            println!("error reading pem");
+            false
+        }
+    }
 }
 
 pub(crate) fn write_certificate_to_disk(
@@ -111,22 +118,9 @@ mod test_certificate {
 
     #[test]
     fn test_cert() {
-        let domain = "*.planned-platypus.018294.xyz";
+        let domain = "*.visible-centipede.018294.xyz";
         let path = get_cert_path(&domain);
         let cert = tls::x509::X509::from_pem(&fs::read(&path).unwrap()).unwrap();
-
-        // dbg!(cert.authority_key_id().unwrap());
-
-        // this is None
-        // for point in cert.cert.crl_distribution_points().unwrap() {
-        //     dbg!(point
-        //         .distpoint()
-        //         .unwrap()
-        //         .fullname()
-        //         .unwrap()
-        //         .into_iter()
-        //         .collect::<Vec<_>>());
-        // }
 
         for resp in cert.ocsp_responders().unwrap() {
             let str: String = resp.chars().collect();
@@ -142,6 +136,8 @@ mod test_certificate {
             dbg!(desc.method().nid().short_name());
         }
         dbg!(cert.issuer_name());
-        // dbg!(cert.cert.digest().unwrap());
+
+        dbg!(cert.not_after());
+        dbg!(cert.not_before());
     }
 }

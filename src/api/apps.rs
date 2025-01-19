@@ -11,7 +11,7 @@ use crate::{
         utils::{get_all_deployments, get_prod_deployment, get_prod_deployment_id},
         AppState, ErrorResponse, FullProjectInfo, ProjectInfo,
     },
-    db::{InsertProject, UpdateProject},
+    db::{EnvVar, InsertProject, UpdateProject},
 };
 
 /// Get projects
@@ -45,7 +45,7 @@ async fn get_projects(state: Data<AppState>) -> impl Responder {
                 id: project.id,
                 repo: repo.into(),
                 created: project.created,
-                env: project.env.clone(),
+                env: project.env,
                 custom_domains: project.custom_domains,
                 prod_deployment_id,
                 prod_deployment,
@@ -159,5 +159,43 @@ async fn update_project(
 async fn delete_project(state: Data<AppState>, id: Path<i64>) -> impl Responder {
     state.db.delete_project(id.into_inner()).await;
     state.manager.sync_with_db().await;
+    HttpResponse::Ok()
+}
+
+/// Upsert env
+#[utoipa::path(
+    request_body = EnvVar,
+    responses(
+        (status = 200, description = "Env upserted successfully"),
+    ),
+    security(
+        ("api_key" = [])
+    )
+)]
+#[patch("/apps/{id}/env", wrap = "RequireApiKey")]
+#[tracing::instrument]
+async fn upsert_env(env: Json<EnvVar>, state: Data<AppState>, id: Path<i64>) -> impl Responder {
+    state
+        .db
+        .upsert_env(id.into_inner(), &env.0.name, &env.0.value)
+        .await;
+    // state.manager.sync_with_db().await; // TODO: review if its fine not calling sync here
+    HttpResponse::Ok()
+}
+
+/// Delete env
+#[utoipa::path(
+    responses(
+        (status = 200, description = "Env deleted successfully"),
+    ),
+    security(
+        ("api_key" = [])
+    )
+)]
+#[delete("/apps/{id}/env/{name}", wrap = "RequireApiKey")]
+#[tracing::instrument]
+async fn delete_env(state: Data<AppState>, path: Path<(i64, String)>) -> impl Responder {
+    state.db.delete_env(path.0, &path.1).await;
+    // state.manager.sync_with_db().await; // TODO: review if its fine not calling sync here
     HttpResponse::Ok()
 }

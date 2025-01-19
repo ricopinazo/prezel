@@ -30,22 +30,3 @@ async fn get_system_logs() -> impl Responder {
     let logs = get_container_execution_logs("prezel").await;
     HttpResponse::Ok().json(logs.collect::<Vec<_>>())
 }
-
-/// Get repositories
-#[utoipa::path(
-    responses(
-        (status = 200, description = "Hello world", body = [Repository])
-    ),
-    security(
-        ("api_key" = [])
-    )
-)]
-#[get("/repos", wrap = "RequireApiKey")]
-async fn get_repos(state: Data<AppState>) -> impl Responder {
-    let repos = state.github.get_repos().await.unwrap();
-    let repos = repos
-        .into_iter()
-        .map(|repo| repo.into())
-        .collect::<Vec<Repository>>();
-    HttpResponse::Ok().json(repos)
-}

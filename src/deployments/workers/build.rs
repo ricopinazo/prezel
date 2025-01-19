@@ -1,8 +1,7 @@
 use std::{future::Future, sync::Arc};
 
-use futures::{future::join_all, StreamExt};
+use futures::StreamExt;
 use rand::seq::SliceRandom;
-use tokio::sync::RwLock;
 
 use crate::{
     container::{Container, ContainerStatus},

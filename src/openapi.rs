@@ -22,5 +22,5 @@ mod tls;
 
 fn main() {
     let openapi = get_open_api();
-    fs::write("/tmp/openapi.json", openapi.to_json().unwrap()).unwrap();
+    fs::write("docs/public/openapi.json", openapi.to_json().unwrap()).unwrap();
 }
