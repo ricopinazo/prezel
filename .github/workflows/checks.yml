@@ -29,3 +29,4 @@ jobs:
         with:
           cache-all-crates: true
       - run: make db && cargo build
+      - run:
