@@ -2,16 +2,22 @@ use std::{collections::HashMap, ops::Deref, sync::Arc};
 
 use futures::{future::join_all, stream, StreamExt};
 use nanoid::nanoid;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use sqlx::Error as SqlxError;
 use sqlx::{sqlite::SqlitePool, FromRow, Pool, Sqlite};
 use tracing::info;
 use utoipa::ToSchema;
 
 use crate::{
     alphabet,
+    env::EnvVars,
     paths::get_instance_db_path,
     time::{self, now},
 };
+
+struct WithId {
+    id: i64,
+}
 
 #[derive(sqlx::Type, PartialEq, Clone, Copy, Debug)]
 #[sqlx(rename_all = "lowercase")]
@@ -21,14 +27,26 @@ pub(crate) enum BuildResult {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct PlainProject {
+struct PlainProject {
     pub(crate) id: i64,
     pub(crate) name: String,
     pub(crate) repo_id: String,
     pub(crate) created: i64,
-    pub(crate) env: String,
     pub(crate) root: String,
     pub(crate) prod_id: Option<i64>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, ToSchema)]
+pub(crate) struct EditedEnvVar {
+    pub(crate) name: String,
+    pub(crate) value: String,
+    pub(crate) edited: i64,
+}
+
+#[derive(Deserialize, Debug, ToSchema)]
+pub(crate) struct EnvVar {
+    pub(crate) name: String,
+    pub(crate) value: String,
 }
 
 #[derive(Clone, Debug)]
@@ -37,20 +55,21 @@ pub(crate) struct Project {
     pub(crate) name: String,
     pub(crate) repo_id: String,
     pub(crate) created: i64,
-    pub(crate) env: String,
+    pub(crate) env: Vec<EditedEnvVar>,
     pub(crate) root: String,
     pub(crate) prod_id: Option<i64>,
     pub(crate) custom_domains: Vec<String>,
 }
 
 impl Project {
-    fn new(project: PlainProject, custom_domains: Vec<String>) -> Self {
+    // FIXME: wtf is this, why not simply building directly a Project struct instad of calling this
+    fn new(project: PlainProject, custom_domains: Vec<String>, env: Vec<EditedEnvVar>) -> Self {
         Self {
             id: project.id,
             name: project.name,
             repo_id: project.repo_id,
             created: project.created,
-            env: project.env,
+            env,
             root: project.root,
             prod_id: project.prod_id,
             custom_domains,
@@ -62,14 +81,13 @@ impl Project {
 pub(crate) struct InsertProject {
     pub(crate) name: String,
     pub(crate) repo_id: String,
-    pub(crate) env: String,
+    pub(crate) env: Vec<EditedEnvVar>,
     pub(crate) root: String,
 }
 
 #[derive(Deserialize, Debug, ToSchema)]
 pub(crate) struct UpdateProject {
     name: Option<String>,
-    env: Option<String>,
     custom_domains: Option<Vec<String>>,
 }
 
@@ -86,12 +104,11 @@ pub(crate) struct UpdateProject {
 // }
 
 #[derive(FromRow)]
-pub(crate) struct Deployment {
+struct PlainDeployment {
     pub(crate) id: i64,
     pub(crate) url_id: String,
     pub(crate) timestamp: i64,
     pub(crate) created: i64,
-    pub(crate) env: String,
     pub(crate) sha: String,
     pub(crate) branch: String, // I might need to have here a list of prs somehow
     pub(crate) default_branch: i64,
@@ -99,6 +116,21 @@ pub(crate) struct Deployment {
     pub(crate) build_started: Option<i64>,
     pub(crate) build_finished: Option<i64>,
     pub(crate) project: i64,
+}
+
+pub(crate) struct Deployment {
+    pub(crate) id: i64,
+    pub(crate) url_id: String,
+    pub(crate) timestamp: i64,
+    pub(crate) created: i64,
+    pub(crate) sha: String,
+    pub(crate) branch: String, // I might need to have here a list of prs somehow
+    pub(crate) default_branch: i64,
+    pub(crate) result: Option<BuildResult>,
+    pub(crate) build_started: Option<i64>,
+    pub(crate) build_finished: Option<i64>,
+    pub(crate) project: i64,
+    pub(crate) env: Vec<EnvVar>,
 }
 
 impl Deployment {
@@ -130,7 +162,7 @@ impl Deref for DeploymentWithProject {
 }
 
 pub(crate) struct InsertDeployment {
-    pub(crate) env: String,
+    pub(crate) env: Vec<EditedEnvVar>,
     pub(crate) sha: String,
     pub(crate) timestamp: i64,
     pub(crate) branch: String,
@@ -182,7 +214,8 @@ impl Db {
         .fetch_optional(&self.conn)
         .await
         .unwrap()?;
-        Some(self.append_custom_domains(project).await)
+
+        Some(self.append_extra_project_info(project).await)
     }
 
     pub(crate) async fn get_project_by_name(&self, name: &str) -> Option<Project> {
@@ -194,7 +227,7 @@ impl Db {
         .fetch_optional(&self.conn)
         .await
         .unwrap()?;
-        Some(self.append_custom_domains(project).await)
+        Some(self.append_extra_project_info(project).await)
     }
 
     pub(crate) async fn get_projects(&self) -> Vec<Project> {
@@ -204,12 +237,12 @@ impl Db {
             .unwrap();
 
         stream::iter(projects)
-            .then(|project| self.append_custom_domains(project))
+            .then(|project| self.append_extra_project_info(project))
             .collect()
             .await
     }
 
-    async fn append_custom_domains(&self, project: PlainProject) -> Project {
+    async fn append_extra_project_info(&self, project: PlainProject) -> Project {
         let custom_domains = sqlx::query!("select * from domains where project = ?", project.id)
             .fetch_all(&self.conn)
             .await
@@ -217,7 +250,15 @@ impl Db {
             .into_iter()
             .map(|record| record.domain)
             .collect();
-        Project::new(project, custom_domains)
+        let env = sqlx::query_as!(
+            EditedEnvVar,
+            "select name, value, edited from env where project = ?",
+            project.id
+        )
+        .fetch_all(&self.conn)
+        .await
+        .unwrap();
+        Project::new(project, custom_domains, env)
     }
 
     pub(crate) async fn insert_project(
@@ -229,18 +270,28 @@ impl Db {
             root,
         }: InsertProject,
     ) {
+        // TODO: transform this into a tx
         let created = time::now();
         sqlx::query!(
-            "insert into projects (name, repo_id, created, env, root) values (?, ?, ?, ?, ?)",
+            "insert into projects (name, repo_id, created, root) values (?, ?, ?, ?)",
             name,
             repo_id,
             created,
-            env,
             root
         )
         .execute(&self.conn)
         .await
         .unwrap();
+        for env in env {
+            sqlx::query!(
+                "insert into env (name, value) values (?, ?)",
+                env.name,
+                env.value,
+            )
+            .execute(&self.conn)
+            .await
+            .unwrap();
+        }
     }
 
     pub(crate) async fn update_project(
@@ -248,19 +299,11 @@ impl Db {
         id: i64,
         UpdateProject {
             name,
-            env,
             custom_domains,
         }: UpdateProject,
     ) {
         if let Some(name) = name {
             sqlx::query!("update projects set name = ? where id = ?", name, id)
-                .execute(&self.conn)
-                .await
-                .unwrap();
-        }
-
-        if let Some(env) = env {
-            sqlx::query!("update projects set env = ? where id = ?", env, id)
                 .execute(&self.conn)
                 .await
                 .unwrap();
@@ -293,15 +336,86 @@ impl Db {
             .unwrap();
     }
 
+    pub(crate) async fn upsert_env(&self, project: i64, name: &str, value: &str) {
+        let edited = time::now();
+        sqlx::query!(
+            "insert into env (project, name, value, edited) values (?, ?, ?, ?) on conflict (name, project) do update set value=?, edited=?",
+            project,
+            name,
+            value,
+            edited,
+            value,
+            edited,
+        )
+        .execute(&self.conn)
+        .await
+        .unwrap();
+    }
+
+    pub(crate) async fn delete_env(&self, project: i64, name: &str) {
+        sqlx::query!(
+            "delete from env where project = ? and name = ?",
+            project,
+            name
+        )
+        .execute(&self.conn)
+        .await
+        .unwrap();
+    }
+
     pub(crate) async fn get_deployment(&self, deployment: i64) -> Option<Deployment> {
-        sqlx::query_as!(
-            Deployment,
-            r#"select id, url_id, timestamp, created, env, sha, branch, default_branch, result as "result: BuildResult", build_started, build_finished,project from deployments where deployments.id = ?"#,
+        let plain_deployment = sqlx::query_as!(
+            PlainDeployment,
+            r#"select id, url_id, timestamp, created, sha, branch, default_branch, result as "result: BuildResult", build_started, build_finished,project from deployments where deployments.id = ?"#,
             deployment
         )
         .fetch_optional(&self.conn)
         .await
-        .unwrap()
+        .unwrap()?;
+
+        Some(self.append_extra_deployment_info(plain_deployment).await)
+    }
+
+    // TODO: just return stream here?
+    pub(crate) async fn get_deployments(&self) -> Vec<Deployment> {
+        let deployments = sqlx::query_as!(
+            PlainDeployment,
+            r#"select id, url_id, timestamp, created, sha, branch, default_branch, result as "result: BuildResult", build_started, build_finished, project from deployments"#
+        )
+        .fetch_all(&self.conn)
+        .await
+        .unwrap();
+
+        stream::iter(deployments)
+            .then(|deployment| self.append_extra_deployment_info(deployment))
+            .collect()
+            .await
+    }
+
+    async fn append_extra_deployment_info(&self, deployment: PlainDeployment) -> Deployment {
+        let env = sqlx::query_as!(
+            EnvVar,
+            "select name, value from deployment_env where deployment = ?",
+            deployment.id
+        )
+        .fetch_all(&self.conn)
+        .await
+        .unwrap();
+
+        Deployment {
+            id: deployment.id,
+            url_id: deployment.url_id,
+            timestamp: deployment.timestamp,
+            created: deployment.created,
+            sha: deployment.sha,
+            branch: deployment.branch,
+            default_branch: deployment.default_branch,
+            result: deployment.result,
+            build_started: deployment.build_started,
+            build_finished: deployment.build_finished,
+            project: deployment.project,
+            env,
+        }
     }
 
     pub(crate) async fn delete_deployment(&self, id: i64) {
@@ -309,17 +423,6 @@ impl Db {
             .execute(&self.conn)
             .await
             .unwrap();
-    }
-
-    pub(crate) async fn get_deployments(&self) -> impl Iterator<Item = Deployment> {
-        sqlx::query_as!(
-            Deployment,
-            r#"select id, url_id, timestamp, created, env, sha, branch, default_branch, result as "result: BuildResult", build_started, build_finished, project from deployments"#
-        )
-        .fetch_all(&self.conn)
-        .await
-        .unwrap()
-        .into_iter()
     }
 
     // TODO: implement this using SQL
@@ -330,6 +433,7 @@ impl Db {
         let mut deployments: Vec<_> = self
             .get_deployments()
             .await
+            .into_iter()
             .filter(|deployment| deployment.project == project && deployment.is_default_branch())
             .filter(|deployment| deployment.result != Some(BuildResult::Failed))
             .collect();
@@ -356,31 +460,46 @@ impl Db {
         let projects: HashMap<_, Arc<_>> = project_iter
             .map(|project| (project.id, project.into()))
             .collect();
-        self.get_deployments().await.filter_map(move |deployment| {
-            Some(DeploymentWithProject {
-                project: projects.get(&deployment.project)?.clone(),
-                deployment,
+        self.get_deployments()
+            .await
+            .into_iter()
+            .filter_map(move |deployment| {
+                Some(DeploymentWithProject {
+                    project: projects.get(&deployment.project)?.clone(),
+                    deployment,
+                })
             })
-        })
     }
 
     pub(crate) async fn insert_deployment(&self, deployment: InsertDeployment) {
         let created = time::now();
         let url_id = create_deployment_url_id();
-        sqlx::query!(
-            "insert into deployments (url_id, timestamp, created, env, sha, branch, default_branch, project) values (?, ?, ?, ?, ?, ?, ?, ?)",
+        let WithId { id } = sqlx::query_as!(
+            WithId,
+            "insert into deployments (url_id, timestamp, created, sha, branch, default_branch, project) values (?, ?, ?, ?, ?, ?, ?) returning id",
             url_id,
             deployment.timestamp,
             created,
-            deployment.env,
             deployment.sha,
             deployment.branch,
             deployment.default_branch,
             deployment.project
         )
-        .execute(&self.conn)
+        .fetch_one(&self.conn)
         .await
         .unwrap();
+
+        for var in deployment.env {
+            sqlx::query!(
+                "insert into deployment_env (name, value, deployment) values (?, ?, ?)",
+                var.name,
+                var.value,
+                id,
+            )
+            .execute(&self.conn)
+            .await
+            .unwrap();
+        }
     }
 
     pub(crate) async fn update_deployment_result(&self, id: i64, status: BuildResult) {

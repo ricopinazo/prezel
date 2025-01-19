@@ -1,10 +1,8 @@
-use std::sync::Arc;
-
 use tracing::error;
 
 use crate::{
     db::{Db, InsertDeployment, Project},
-    deployments::worker::{Worker, WorkerHandle},
+    deployments::worker::Worker,
     github::{Commit, Github},
 };
 

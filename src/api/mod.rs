@@ -4,7 +4,9 @@ use serde::Serialize;
 use utoipa::{OpenApi, ToSchema};
 
 use crate::{
-    db::{BuildResult, Db, DeploymentWithProject, InsertProject, UpdateProject},
+    db::{
+        BuildResult, Db, DeploymentWithProject, EditedEnvVar, EnvVar, InsertProject, UpdateProject,
+    },
     deployments::{deployment::Deployment, manager::Manager},
     github::Github,
     label::Label,
@@ -32,13 +34,15 @@ pub(crate) const API_PORT: u16 = 5045;
         apps::create_project,
         apps::update_project,
         apps::delete_project,
+        apps::upsert_env,
+        apps::delete_env,
         deployments::redeploy,
         deployments::delete_deployment,
         deployments::sync,
         deployments::get_deployment_logs,
         deployments::get_deployment_build_logs
     ),
-    components(schemas(ProjectInfo, FullProjectInfo, ErrorResponse, UpdateProject, Repository, ApiDeployment, Log, Level, Status, InsertProject, LibsqlDb)),
+    components(schemas(ProjectInfo, FullProjectInfo, ErrorResponse, UpdateProject, Repository, ApiDeployment, Log, Level, Status, InsertProject, LibsqlDb, EnvVar, EditedEnvVar)),
     tags(
         (name = "prezel", description = "Prezel management endpoints.")
     ),
@@ -56,6 +60,8 @@ fn configure_service(store: Data<AppState>) -> impl FnOnce(&mut ServiceConfig) {
             .service(apps::create_project)
             .service(apps::update_project)
             .service(apps::delete_project)
+            .service(apps::upsert_env)
+            .service(apps::delete_env)
             .service(deployments::redeploy)
             .service(deployments::delete_deployment)
             .service(deployments::sync)
@@ -305,7 +311,7 @@ struct ProjectInfo {
     id: i64,
     repo: Repository,
     created: i64,
-    env: String,
+    env: Vec<EditedEnvVar>,
     custom_domains: Vec<String>,
     prod_deployment_id: Option<i64>,
     prod_deployment: Option<ApiDeployment>,
@@ -317,7 +323,7 @@ struct FullProjectInfo {
     id: i64,
     repo: Repository,
     created: i64,
-    env: String,
+    env: Vec<EditedEnvVar>,
     custom_domains: Vec<String>,
     prod_deployment_id: Option<i64>,
     prod_deployment: Option<ApiDeployment>,
