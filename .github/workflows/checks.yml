@@ -18,12 +18,12 @@ jobs:
         with:
           ref: main
       # I have to invoke sqlx like this because the binary is actually kind of a cargo with the sqlx subcommand preinstalled
-      - run: cargo sqlx database create --database-url=/tmp/old-db
-      - run: cargo sqlx migrate run --database-url=/tmp/old-db
+      - run: cargo sqlx database create --database-url=sqlite:/tmp/old-db
+      - run: cargo sqlx migrate run --database-url=sqlite:/tmp/old-db
 
       # run a migrations againstdb from main
       - uses: actions/checkout@v4
-      - run: cargo sqlx migrate run --database-url=/tmp/old-db
+      - run: cargo sqlx migrate run --database-url=sqlite:/tmp/old-db
 
       - uses: Swatinem/rust-cache@v2
         with:
