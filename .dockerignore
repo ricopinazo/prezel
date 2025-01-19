@@ -1,6 +1,7 @@
 .git
 .cargo
 .sqlx
+src.db
 target
 docs
 examples
