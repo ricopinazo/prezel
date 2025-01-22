@@ -11,7 +11,7 @@ use octocrab::{
     Octocrab, Result as OctocrabResult,
 };
 use serde::Serialize;
-use std::{io::Cursor, path::Path, sync::Arc};
+use std::{collections::HashMap, io::Cursor, path::Path, sync::Arc};
 use tar::Archive;
 use tokio::sync::RwLock;
 use tracing::info;
@@ -25,6 +25,7 @@ const COMMENT_START: &'static str = "[prezel]: authored";
 struct RequestBody {
     token: String,
     id: String,
+    repo: i64,
 }
 
 #[derive(Serialize)]
@@ -37,7 +38,7 @@ pub(crate) struct Commit {
     pub(crate) sha: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Token {
     secret: String,
     millis: i64,
@@ -45,22 +46,18 @@ struct Token {
 
 #[derive(Clone, Debug)]
 pub(crate) struct Github {
-    token: Arc<RwLock<Token>>,
+    tokens: Arc<RwLock<HashMap<i64, Token>>>,
 }
 
 impl Github {
     pub(crate) async fn new() -> Self {
         Self {
-            token: RwLock::new(
-                get_installation_access_token()
-                    .await
-                    .expect("Failed to get app installation token on startup"),
-            )
-            .into(),
+            tokens: Default::default(),
         }
     }
-    pub(crate) async fn get_open_pulls(&self, repo_id: &str) -> anyhow::Result<Vec<PullRequest>> {
-        let crab = self.get_crab().await?;
+
+    pub(crate) async fn get_open_pulls(&self, repo_id: i64) -> anyhow::Result<Vec<PullRequest>> {
+        let crab = self.get_crab(repo_id).await?;
         let (owner, name) = self.get_owner_and_name(repo_id).await?;
         let pulls = crab.pulls(owner, name).list().send().await?;
         Ok(pulls
@@ -69,34 +66,22 @@ impl Github {
             .collect())
     }
 
-    pub(crate) async fn get_repo(&self, id: &str) -> anyhow::Result<Option<Repository>> {
-        let crab = self.get_crab().await?;
+    pub(crate) async fn get_repo(&self, id: i64) -> anyhow::Result<Option<Repository>> {
+        let crab = self.get_crab(id).await?;
         Ok(crab
             .get(format!("/repositories/{id}"), None::<&()>)
             .await
             .unwrap())
     }
 
-    pub(crate) async fn get_repos(&self) -> anyhow::Result<Vec<Repository>> {
-        let crab = self.get_crab().await?;
-        let installation_repos: InstallationRepositories = crab
-            .get(
-                "/installation/repositories",
-                Some(&RepositoriesParameters { per_page: 100 }),
-            )
-            .await
-            .unwrap();
-        Ok(installation_repos.repositories)
-    }
-
-    pub(crate) async fn get_pull(&self, repo_id: &str, number: u64) -> anyhow::Result<PullRequest> {
-        let crab = self.get_crab().await?;
+    pub(crate) async fn get_pull(&self, repo_id: i64, number: u64) -> anyhow::Result<PullRequest> {
+        let crab = self.get_crab(repo_id).await?;
         let (owner, name) = self.get_owner_and_name(repo_id).await?;
         Ok(crab.pulls(owner, name).get(number).await?)
     }
 
-    pub(crate) async fn get_default_branch(&self, repo_id: &str) -> anyhow::Result<String> {
-        let crab = self.get_crab().await?;
+    pub(crate) async fn get_default_branch(&self, repo_id: i64) -> anyhow::Result<String> {
+        let crab = self.get_crab(repo_id).await?;
         let (owner, name) = self.get_owner_and_name(repo_id).await?;
         let repository = crab.repos(owner, name).get().await.unwrap();
         Ok(repository.default_branch.unwrap())
@@ -104,10 +89,10 @@ impl Github {
 
     pub(crate) async fn get_latest_commit(
         &self,
-        repo_id: &str,
+        repo_id: i64,
         branch: &str,
     ) -> anyhow::Result<Option<Commit>> {
-        let crab = self.get_crab().await?;
+        let crab = self.get_crab(repo_id).await?;
         let (owner, name) = self.get_owner_and_name(repo_id).await?;
         Ok(Self::get_latest_commit_option(&crab, &owner, &name, branch).await)
     }
@@ -130,11 +115,11 @@ impl Github {
 
     pub(crate) async fn download_commit(
         &self,
-        repo_id: &str,
+        repo_id: i64,
         sha: &str,
         path: &Path,
     ) -> anyhow::Result<()> {
-        let crab = self.get_crab().await?;
+        let crab = self.get_crab(repo_id).await?;
         let (owner, name) = self.get_owner_and_name(repo_id).await?;
         let response = crab
             .repos(owner, name)
@@ -158,12 +143,12 @@ impl Github {
 
     pub(crate) async fn upsert_pull_check(
         &self,
-        repo_id: &str,
+        repo_id: i64,
         sha: &str,
         status: CheckRunStatus,
         conclusion: Option<CheckRunConclusion>,
     ) -> anyhow::Result<()> {
-        let crab = self.get_crab().await?;
+        let crab = self.get_crab(repo_id).await?;
         let (owner, name) = self.get_owner_and_name(repo_id).await?;
         let check_handler = crab.checks(owner, name);
         let checks = check_handler
@@ -204,11 +189,11 @@ impl Github {
 
     pub(crate) async fn upsert_pull_comment(
         &self,
-        repo_id: &str,
+        repo_id: i64,
         content: &str,
         pull: u64,
     ) -> anyhow::Result<()> {
-        let crab = self.get_crab().await?;
+        let crab = self.get_crab(repo_id).await?;
         let (owner, name) = self.get_owner_and_name(repo_id).await?;
         // let app: octocrab::models::App = crab.get("/app", None::<&()>).await.unwrap();
         // let app_slug = app.slug.unwrap();
@@ -246,31 +231,30 @@ impl Github {
     }
 
     // TODO: make this receive crab as argument
-    async fn get_owner_and_name(&self, id: &str) -> anyhow::Result<(String, String)> {
+    async fn get_owner_and_name(&self, id: i64) -> anyhow::Result<(String, String)> {
         let repo = self.get_repo(id).await?.unwrap();
         Ok((repo.owner.unwrap().login, repo.name))
     }
 
-    async fn get_crab(&self) -> anyhow::Result<Octocrab> {
-        self.update_token().await?;
+    async fn get_crab(&self, repo_id: i64) -> anyhow::Result<Octocrab> {
+        let secret = self.update_token(repo_id).await?;
         Ok(octocrab::OctocrabBuilder::default()
-            .user_access_token(self.token.read().await.secret.clone())
+            .user_access_token(secret)
             .build()
             .unwrap())
     }
 
-    async fn update_token(&self) -> anyhow::Result<()> {
-        let token_too_old = {
-            let token = self.token.read().await;
-            is_token_too_old(&token)
-        };
-        if token_too_old {
-            let mut token = self.token.write().await;
-            if is_token_too_old(&token) {
-                *token = get_installation_access_token().await?
+    async fn update_token(&self, repo_id: i64) -> anyhow::Result<String> {
+        let mut tokens = self.tokens.write().await;
+        let token = tokens.get(&repo_id);
+        match token {
+            Some(token) if !is_token_too_old(token) => Ok(token.secret.clone()),
+            _ => {
+                let token = get_installation_access_token(repo_id).await?;
+                tokens.insert(repo_id.to_owned(), token.clone());
+                Ok(token.secret)
             }
         }
-        Ok(())
     }
 }
 
@@ -279,7 +263,7 @@ fn is_token_too_old(token: &Token) -> bool {
     age > 30 * 60 * 1000
 }
 
-async fn get_installation_access_token() -> anyhow::Result<Token> {
+async fn get_installation_access_token(repo: i64) -> anyhow::Result<Token> {
     let Conf {
         coordinator,
         token,
@@ -288,7 +272,7 @@ async fn get_installation_access_token() -> anyhow::Result<Token> {
 
     let client = reqwest::Client::new();
     let url = format!("{coordinator}/api/instance/token");
-    let json = RequestBody { id, token };
+    let json = RequestBody { id, token, repo };
     info!("requesting Github installation token from {url}");
     let response = client.post(url).json(&json).send().await?;
     ensure!(response.status() == StatusCode::OK);

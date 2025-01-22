@@ -105,7 +105,7 @@ impl Deployment {
             build_queue.clone(),
             hooks,
             github,
-            project.repo_id.clone(),
+            project.repo_id,
             sha.clone(),
             id,
             env,

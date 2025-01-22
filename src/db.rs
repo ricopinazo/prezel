@@ -1,16 +1,14 @@
 use std::{collections::HashMap, ops::Deref, sync::Arc};
 
-use futures::{future::join_all, stream, StreamExt};
+use futures::{stream, StreamExt};
 use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
-use sqlx::Error as SqlxError;
 use sqlx::{sqlite::SqlitePool, FromRow, Pool, Sqlite};
 use tracing::info;
 use utoipa::ToSchema;
 
 use crate::{
     alphabet,
-    env::EnvVars,
     paths::get_instance_db_path,
     time::{self, now},
 };
@@ -30,7 +28,7 @@ pub(crate) enum BuildResult {
 struct PlainProject {
     pub(crate) id: i64,
     pub(crate) name: String,
-    pub(crate) repo_id: String,
+    pub(crate) repo_id: i64,
     pub(crate) created: i64,
     pub(crate) root: String,
     pub(crate) prod_id: Option<i64>,
@@ -53,7 +51,7 @@ pub(crate) struct EnvVar {
 pub(crate) struct Project {
     pub(crate) id: i64,
     pub(crate) name: String,
-    pub(crate) repo_id: String,
+    pub(crate) repo_id: i64,
     pub(crate) created: i64,
     pub(crate) env: Vec<EditedEnvVar>,
     pub(crate) root: String,
@@ -61,27 +59,11 @@ pub(crate) struct Project {
     pub(crate) custom_domains: Vec<String>,
 }
 
-impl Project {
-    // FIXME: wtf is this, why not simply building directly a Project struct instad of calling this
-    fn new(project: PlainProject, custom_domains: Vec<String>, env: Vec<EditedEnvVar>) -> Self {
-        Self {
-            id: project.id,
-            name: project.name,
-            repo_id: project.repo_id,
-            created: project.created,
-            env,
-            root: project.root,
-            prod_id: project.prod_id,
-            custom_domains,
-        }
-    }
-}
-
 #[derive(Deserialize, Debug, ToSchema)]
 pub(crate) struct InsertProject {
     pub(crate) name: String,
-    pub(crate) repo_id: String,
-    pub(crate) env: Vec<EditedEnvVar>,
+    pub(crate) repo_id: i64,
+    pub(crate) env: Vec<EnvVar>,
     pub(crate) root: String,
 }
 
@@ -90,18 +72,6 @@ pub(crate) struct UpdateProject {
     name: Option<String>,
     custom_domains: Option<Vec<String>>,
 }
-
-// #[derive(Clone, Debug)]
-// pub(crate) struct DeploymentWithProject {
-//     pub(crate) id: String,
-//     pub(crate) project_name: String,
-//     pub(crate) project_id: i64,
-//     pub(crate) repo_id: String,
-//     pub(crate) sha: String,
-//     pub(crate) env: String,
-//     pub(crate) pr: Option<i64>,
-//     pub(crate) created: i64,
-// }
 
 #[derive(FromRow)]
 struct PlainDeployment {
@@ -258,7 +228,17 @@ impl Db {
         .fetch_all(&self.conn)
         .await
         .unwrap();
-        Project::new(project, custom_domains, env)
+
+        Project {
+            id: project.id,
+            name: project.name,
+            repo_id: project.repo_id,
+            created: project.created,
+            env,
+            root: project.root,
+            prod_id: project.prod_id,
+            custom_domains,
+        }
     }
 
     pub(crate) async fn insert_project(
@@ -282,11 +262,13 @@ impl Db {
         .execute(&self.conn)
         .await
         .unwrap();
+        let edited = time::now();
         for env in env {
             sqlx::query!(
-                "insert into env (name, value) values (?, ?)",
+                "insert into env (name, value, edited) values (?, ?, ?)",
                 env.name,
                 env.value,
+                edited,
             )
             .execute(&self.conn)
             .await
