@@ -29,7 +29,7 @@ pub(crate) struct CommitContainer {
     github: Github,
     // main_db_file: HostFile,
     branch_db: Option<BranchSqliteDb>,
-    pub(crate) repo_id: String,
+    pub(crate) repo_id: i64,
     pub(crate) sha: String,
     env: EnvVars,
     root: String,
@@ -40,7 +40,7 @@ impl CommitContainer {
         build_queue: WorkerHandle,
         hooks: StatusHooks,
         github: Github,
-        repo_id: String,
+        repo_id: i64,
         sha: String,
         deployment: i64,
         env: EnvVars, // TODO: this is duplicated in ContainerConfig...
@@ -122,7 +122,7 @@ impl CommitContainer {
 
     async fn build_context(&self, path: &Path) -> anyhow::Result<PathBuf> {
         self.github
-            .download_commit(&self.repo_id, &self.sha, &path)
+            .download_commit(self.repo_id, &self.sha, &path)
             .await
             .unwrap(); // FIXME: this should result in an Error type that causes the build tu be cancelled and retry later on
         assert!(path.exists());

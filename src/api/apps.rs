@@ -36,7 +36,7 @@ async fn get_projects(state: Data<AppState>) -> impl Responder {
             // TODO: if the repo is not available, simply don't return that info
             let repo = state
                 .github
-                .get_repo(&project.repo_id)
+                .get_repo(project.repo_id)
                 .await
                 .unwrap()
                 .unwrap();
@@ -75,7 +75,7 @@ async fn get_project(state: Data<AppState>, name: Path<String>) -> impl Responde
         Some(project) => {
             let repo = state
                 .github
-                .get_repo(&project.repo_id)
+                .get_repo(project.repo_id)
                 .await
                 .unwrap()
                 .unwrap();

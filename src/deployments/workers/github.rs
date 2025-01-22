@@ -19,7 +19,7 @@ impl Worker for GithubWorker {
                 repo_id, env, id, ..
             } in self.db.get_projects().await
             {
-                let commit = get_default_branch_and_latest_commit(&self.github, &repo_id).await;
+                let commit = get_default_branch_and_latest_commit(&self.github, repo_id).await;
                 match commit {
                     Err(error) => {
                         error!("Got error when trying to read from Github: {error}");
@@ -42,11 +42,11 @@ impl Worker for GithubWorker {
                     }
                 }
 
-                let pulls = self.github.get_open_pulls(&repo_id).await.unwrap();
+                let pulls = self.github.get_open_pulls(repo_id).await.unwrap();
                 for pull in pulls {
                     let branch = pull.head.ref_field;
                     // FIXME: some duplicated code in here as in above
-                    let commit = self.github.get_latest_commit(&repo_id, &branch).await;
+                    let commit = self.github.get_latest_commit(repo_id, &branch).await;
                     match commit {
                         Err(error) => {
                             error!("Got error when trying to read from Github: {error}");
@@ -75,7 +75,7 @@ impl Worker for GithubWorker {
 
 async fn get_default_branch_and_latest_commit(
     github: &Github,
-    repo_id: &str,
+    repo_id: i64,
 ) -> anyhow::Result<(String, Option<Commit>)> {
     let default_branch = github.get_default_branch(repo_id).await?;
     let commit = github.get_latest_commit(repo_id, &default_branch).await?;
