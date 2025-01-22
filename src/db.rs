@@ -1,16 +1,14 @@
 use std::{collections::HashMap, ops::Deref, sync::Arc};
 
-use futures::{future::join_all, stream, StreamExt};
+use futures::{stream, StreamExt};
 use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
-use sqlx::Error as SqlxError;
 use sqlx::{sqlite::SqlitePool, FromRow, Pool, Sqlite};
 use tracing::info;
 use utoipa::ToSchema;
 
 use crate::{
     alphabet,
-    env::EnvVars,
     paths::get_instance_db_path,
     time::{self, now},
 };
@@ -53,7 +51,7 @@ pub(crate) struct EnvVar {
 pub(crate) struct Project {
     pub(crate) id: i64,
     pub(crate) name: String,
-    pub(crate) repo_id: String,
+    pub(crate) repo_id: i64,
     pub(crate) created: i64,
     pub(crate) env: Vec<EditedEnvVar>,
     pub(crate) root: String,
