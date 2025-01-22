@@ -28,7 +28,7 @@ This means setting your first server up will be a breathe!
 ## Installation 🚀
 
 For now, the only officially supported way of installing Prezel is through the main Prezel provider instance.
-Just head to prezel.app, create and account, and you will be prompted with the command you need to run on your server.
+Just head to [prezel.app](https://prezel.app), create and account, and you will be prompted with the command you need to run on your server.
 
 ## License 📜
 
