@@ -23,7 +23,7 @@ const COMMENT_START: &'static str = "[prezel]: authored";
 
 #[derive(Serialize, Debug)]
 struct RequestBody {
-    token: String,
+    secret: String,
     id: String,
     repo: i64,
 }
@@ -265,14 +265,14 @@ fn is_token_too_old(token: &Token) -> bool {
 
 async fn get_installation_access_token(repo: i64) -> anyhow::Result<Token> {
     let Conf {
-        coordinator,
-        token,
+        provider,
+        secret,
         hostname: id,
     } = Conf::read();
 
     let client = reqwest::Client::new();
-    let url = format!("{coordinator}/api/instance/token");
-    let json = RequestBody { id, token, repo };
+    let url = format!("{provider}/api/instance/token");
+    let json = RequestBody { id, secret, repo };
     info!("requesting Github installation token from {url}");
     let response = client.post(url).json(&json).send().await?;
     ensure!(response.status() == StatusCode::OK);

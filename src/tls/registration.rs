@@ -153,18 +153,18 @@ struct Ready {
 
 async fn write_dns_challenge(handle: Arc<ChallengeTask>, conf: &Conf) {
     let Conf {
-        token,
+        secret,
         hostname,
-        coordinator,
+        provider,
     } = conf;
     let challenge_response = handle.get_dns_value();
 
     // send request to the coordinator to setup DNS challenge
     let client = reqwest::Client::new();
-    let url = format!("{coordinator}/api/instance/dns");
+    let url = format!("{provider}/api/instance/dns");
     let query = client
         .post(url)
-        .header("X-API-Key", token)
+        .header("X-API-Key", secret)
         .header("X-Instance-ID", hostname)
         .body(challenge_response)
         .send();
@@ -174,10 +174,10 @@ async fn write_dns_challenge(handle: Arc<ChallengeTask>, conf: &Conf) {
     // wait until DNS is ready (both A and TXT record)
     loop {
         let client = reqwest::Client::new();
-        let url = format!("{coordinator}/api/instance/dns");
+        let url = format!("{provider}/api/instance/dns");
         let response = client
             .get(url)
-            .header("X-API-Key", token)
+            .header("X-API-Key", secret)
             .header("X-Instance-ID", hostname)
             // .body("some body")
             .send()

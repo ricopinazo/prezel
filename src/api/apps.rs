@@ -1,17 +1,18 @@
 use actix_web::{
     delete, get, patch, post,
     web::{Data, Json, Path},
-    HttpResponse, Responder,
+    HttpMessage, HttpRequest, HttpResponse, Responder,
 };
 use futures::future::join_all;
 
 use crate::{
     api::{
-        security::RequireApiKey,
+        bearer::AnyRole,
         utils::{get_all_deployments, get_prod_deployment, get_prod_deployment_id},
         AppState, ErrorResponse, FullProjectInfo, ProjectInfo,
     },
     db::{EnvVar, InsertProject, UpdateProject},
+    tokens::TokenClaims,
 };
 
 /// Get projects
@@ -23,9 +24,9 @@ use crate::{
         ("api_key" = [])
     )
 )]
-#[get("/apps", wrap = "RequireApiKey")]
+#[get("/apps")]
 #[tracing::instrument]
-async fn get_projects(state: Data<AppState>) -> impl Responder {
+async fn get_projects(auth: AnyRole, state: Data<AppState>) -> impl Responder {
     let projects = state.db.get_projects().await;
     let projects_with_deployments = projects.into_iter().map(|project| {
         let state = state.clone();
@@ -66,7 +67,7 @@ async fn get_projects(state: Data<AppState>) -> impl Responder {
         ("api_key" = [])
     )
 )]
-#[get("/apps/{name}", wrap = "RequireApiKey")]
+#[get("/apps/{name}")]
 #[tracing::instrument]
 async fn get_project(state: Data<AppState>, name: Path<String>) -> impl Responder {
     let name = name.into_inner();
@@ -111,7 +112,7 @@ async fn get_project(state: Data<AppState>, name: Path<String>) -> impl Responde
         ("api_key" = [])
     )
 )]
-#[post("/apps", wrap = "RequireApiKey")] // TODO: return project when successfully inserted
+#[post("/apps")] // TODO: return project when successfully inserted
 async fn create_project(project: Json<InsertProject>, state: Data<AppState>) -> impl Responder {
     if &project.name != "api" {
         state.db.insert_project(project.0).await;
@@ -133,7 +134,7 @@ async fn create_project(project: Json<InsertProject>, state: Data<AppState>) -> 
         ("api_key" = [])
     )
 )]
-#[patch("/apps/{id}", wrap = "RequireApiKey")]
+#[patch("/apps/{id}")]
 #[tracing::instrument]
 async fn update_project(
     project: Json<UpdateProject>,
@@ -154,9 +155,10 @@ async fn update_project(
         ("api_key" = [])
     )
 )]
-#[delete("/apps/{id}", wrap = "RequireApiKey")]
+#[delete("/apps/{id}")]
 #[tracing::instrument]
-async fn delete_project(state: Data<AppState>, id: Path<i64>) -> impl Responder {
+async fn delete_project(req: HttpRequest, state: Data<AppState>, id: Path<i64>) -> impl Responder {
+    req.extensions().get::<TokenClaims>();
     state.db.delete_project(id.into_inner()).await;
     state.manager.sync_with_db().await;
     HttpResponse::Ok()
@@ -172,7 +174,7 @@ async fn delete_project(state: Data<AppState>, id: Path<i64>) -> impl Responder 
         ("api_key" = [])
     )
 )]
-#[patch("/apps/{id}/env", wrap = "RequireApiKey")]
+#[patch("/apps/{id}/env")]
 #[tracing::instrument]
 async fn upsert_env(env: Json<EnvVar>, state: Data<AppState>, id: Path<i64>) -> impl Responder {
     state
@@ -192,7 +194,7 @@ async fn upsert_env(env: Json<EnvVar>, state: Data<AppState>, id: Path<i64>) -> 
         ("api_key" = [])
     )
 )]
-#[delete("/apps/{id}/env/{name}", wrap = "RequireApiKey")]
+#[delete("/apps/{id}/env/{name}")]
 #[tracing::instrument]
 async fn delete_env(state: Data<AppState>, path: Path<(i64, String)>) -> impl Responder {
     state.db.delete_env(path.0, &path.1).await;

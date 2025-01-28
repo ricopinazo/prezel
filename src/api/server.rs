@@ -5,7 +5,7 @@ use actix_web::{middleware::Logger, web::Data, App, HttpServer};
 use tracing::info;
 use utoipa::{
     openapi::{
-        security::{ApiKey, ApiKeyValue, SecurityScheme},
+        security::{HttpAuthScheme, HttpBuilder, SecurityScheme},
         OpenApi as OpenApiStruct, Server,
     },
     OpenApi,
@@ -13,7 +13,7 @@ use utoipa::{
 use utoipa_rapidoc::RapiDoc;
 
 use crate::{
-    api::{configure_service, security::API_KEY_NAME, AppState, API_PORT},
+    api::{configure_service, AppState, API_PORT},
     db::Db,
     deployments::manager::Manager,
     github::Github,
@@ -23,10 +23,15 @@ use super::ApiDoc;
 
 pub(crate) fn get_open_api() -> OpenApiStruct {
     let mut openapi = ApiDoc::openapi();
-    openapi.components.as_mut().unwrap().add_security_scheme(
-        "api_key",
-        SecurityScheme::ApiKey(ApiKey::Header(ApiKeyValue::new(API_KEY_NAME))),
-    );
+    let http = HttpBuilder::new()
+        .scheme(HttpAuthScheme::Bearer)
+        .bearer_format("JWT")
+        .build();
+    openapi
+        .components
+        .as_mut()
+        .unwrap()
+        .add_security_scheme("api_key", SecurityScheme::Http(http));
     openapi
 }
 
@@ -35,7 +40,7 @@ pub(crate) async fn run_api_server(
     db: Db,
     github: Github,
     api_hostname: &str,
-    coordinator_hostname: String,
+    coordinator_hostname: String, // TODO: remove
 ) -> Result<(), impl Error> {
     let state = AppState {
         db,
@@ -52,6 +57,8 @@ pub(crate) async fn run_api_server(
     info!("Prezel API service listening at {base_url}");
     info!("Docs available at {base_url}/docs");
     HttpServer::new(move || {
+        // let Conf { secret, .. } = Conf::read();
+        // let auth = auth(secret);
         let cors = Cors::permissive();
         // .allowed_origin(&coordinator_hostname) // TODO: review if I should enable this
         // .allowed_origin("https://libsqlstudio.com")
@@ -63,6 +70,7 @@ pub(crate) async fn run_api_server(
         // This factory closure is called on each worker thread independently.
         App::new()
             .wrap(Logger::default())
+            // .wrap(auth) // TODO: review this order makes sense
             .wrap(cors)
             .configure(configure_service(Data::new(state.clone())))
             // .service(web::scope("/api").configure(configure_service(Data::new(state.clone()))))

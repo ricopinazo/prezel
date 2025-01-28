@@ -5,7 +5,7 @@ use actix_web::{
 };
 
 use crate::{
-    api::{security::RequireApiKey, utils::clone_deployment, AppState},
+    api::{utils::clone_deployment, AppState},
     logging::{read_request_event_logs, Log},
 };
 
@@ -20,7 +20,7 @@ use crate::{
         ("api_key" = [])
     )
 )]
-#[post("/deployments/redeploy", wrap = "RequireApiKey")]
+#[post("/deployments/redeploy")]
 #[tracing::instrument]
 async fn redeploy(deployment: Json<i64>, state: Data<AppState>) -> impl Responder {
     clone_deployment(&state.db, deployment.0).await;
@@ -37,7 +37,7 @@ async fn redeploy(deployment: Json<i64>, state: Data<AppState>) -> impl Responde
         ("api_key" = [])
     )
 )]
-#[delete("/deployments/{id}", wrap = "RequireApiKey")]
+#[delete("/deployments/{id}")]
 #[tracing::instrument]
 async fn delete_deployment(state: Data<AppState>, id: Path<i64>) -> impl Responder {
     state.db.delete_deployment(id.into_inner()).await;
@@ -54,7 +54,7 @@ async fn delete_deployment(state: Data<AppState>, id: Path<i64>) -> impl Respond
         ("api_key" = [])
     )
 )]
-#[post("/sync", wrap = "RequireApiKey")]
+#[post("/sync")]
 #[tracing::instrument]
 async fn sync(state: Data<AppState>) -> impl Responder {
     state.manager.full_sync_with_github().await;
@@ -72,7 +72,7 @@ async fn sync(state: Data<AppState>) -> impl Responder {
         ("api_key" = [])
     )
 )]
-#[get("/deployments/{id}/logs", wrap = "RequireApiKey")]
+#[get("/deployments/{id}/logs")]
 #[tracing::instrument]
 async fn get_deployment_logs(state: Data<AppState>, id: Path<i64>) -> impl Responder {
     let id = id.into_inner();
@@ -110,7 +110,7 @@ async fn get_deployment_logs(state: Data<AppState>, id: Path<i64>) -> impl Respo
         ("api_key" = [])
     )
 )]
-#[get("/deployments/{id}/build", wrap = "RequireApiKey")]
+#[get("/deployments/{id}/build")]
 #[tracing::instrument]
 async fn get_deployment_build_logs(state: Data<AppState>, id: Path<i64>) -> impl Responder {
     let id = id.into_inner();

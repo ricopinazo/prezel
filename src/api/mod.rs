@@ -15,6 +15,7 @@ use crate::{
 };
 
 mod apps;
+mod bearer;
 mod deployments;
 mod security;
 pub(crate) mod server;
@@ -88,27 +89,6 @@ enum ErrorResponse {
     /// When todo endpoint was called without correct credentials
     Unauthorized(String),
 }
-
-// #[derive(Serialize, ToSchema)]
-// struct LogLine {
-//     log_type: String,
-//     content: String,
-// }
-
-// impl From<Line> for LogLine {
-//     fn from(value: Line) -> Self {
-//         match value {
-//             Line::Stdout(line) => Self {
-//                 log_type: "ok".to_owned(),
-//                 content: line,
-//             },
-//             Line::Stderr(line) => Self {
-//                 log_type: "error".to_owned(),
-//                 content: line,
-//             },
-//         }
-//     }
-// }
 
 #[derive(Debug, PartialEq, Clone, Copy, ToSchema, Serialize)]
 pub(crate) enum Status {

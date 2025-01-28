@@ -1,4 +1,3 @@
-use std::fs;
 use std::net::{Ipv4Addr, SocketAddrV4};
 
 use async_trait::async_trait;
@@ -25,6 +24,7 @@ use crate::listener::{Access, Listener};
 use crate::logging::{Level, RequestLog, RequestLogger};
 use crate::time::now;
 use crate::tls::{CertificateStore, TlsState};
+use crate::tokens::decode_token;
 
 struct ApiListener;
 
@@ -90,7 +90,11 @@ impl ProxyApp {
             .and_then(|cookie_header| {
                 Cookie::split_parse(cookie_header)
                     .filter_map(|cookie| cookie.ok())
-                    .find(|cookie| cookie.name() == hostname && cookie.value() == self.config.token)
+                    .find(|cookie| {
+                        cookie.name() == hostname
+                            && decode_token(cookie.value(), &self.config.secret).is_ok()
+                        // TODO: make sure I validate any future exp field etc
+                    })
             })
             .is_some()
     }
@@ -168,8 +172,8 @@ impl ProxyHttp for ProxyApp {
             let path = session.req_header().uri.path();
             let callback = Url::parse(&format!("https://{host}{path}")).unwrap();
 
-            let coordinator = &self.config.coordinator;
-            let mut redirect = Url::parse(&format!("{coordinator}/api/instance/auth")).unwrap();
+            let provider = &self.config.provider;
+            let mut redirect = Url::parse(&format!("{provider}/api/instance/auth")).unwrap();
             redirect
                 .query_pairs_mut()
                 .append_pair("callback", callback.as_str());
@@ -183,6 +187,7 @@ impl ProxyHttp for ProxyApp {
         }
     }
 
+    // TODO: try removing this and see if everything still works, including loading favicons in the console
     async fn response_filter(
         &self,
         session: &mut Session,
@@ -193,15 +198,11 @@ impl ProxyHttp for ProxyApp {
         Self::CTX: Send + Sync,
     {
         let origin = session.get_header(header::ORIGIN);
-        let console =
-            origin.is_some_and(|header| header.to_str().unwrap() == self.config.coordinator);
+        let console = origin.is_some_and(|header| header.to_str().unwrap() == self.config.provider);
 
         if console {
             upstream_response
-                .insert_header(
-                    header::ACCESS_CONTROL_ALLOW_ORIGIN,
-                    &self.config.coordinator,
-                )
+                .insert_header(header::ACCESS_CONTROL_ALLOW_ORIGIN, &self.config.provider)
                 .unwrap();
         }
         Ok(())

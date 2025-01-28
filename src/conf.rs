@@ -5,9 +5,9 @@ use crate::paths::get_container_root;
 
 #[derive(Deserialize, Clone, Debug)]
 pub(crate) struct Conf {
-    pub(crate) token: String,
+    pub(crate) secret: String,
     pub(crate) hostname: String,
-    pub(crate) coordinator: String,
+    pub(crate) provider: String,
 }
 
 impl Conf {
