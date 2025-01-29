@@ -7,7 +7,7 @@ use futures::future::join_all;
 
 use crate::{
     api::{
-        bearer::AnyRole,
+        bearer::{AnyRole, OwnerRole},
         utils::{get_all_deployments, get_prod_deployment, get_prod_deployment_id},
         AppState, ErrorResponse, FullProjectInfo, ProjectInfo,
     },
@@ -69,7 +69,7 @@ async fn get_projects(auth: AnyRole, state: Data<AppState>) -> impl Responder {
 )]
 #[get("/apps/{name}")]
 #[tracing::instrument]
-async fn get_project(state: Data<AppState>, name: Path<String>) -> impl Responder {
+async fn get_project(auth: AnyRole, state: Data<AppState>, name: Path<String>) -> impl Responder {
     let name = name.into_inner();
     let project = state.db.get_project_by_name(&name).await;
     match project {
@@ -113,7 +113,11 @@ async fn get_project(state: Data<AppState>, name: Path<String>) -> impl Responde
     )
 )]
 #[post("/apps")] // TODO: return project when successfully inserted
-async fn create_project(project: Json<InsertProject>, state: Data<AppState>) -> impl Responder {
+async fn create_project(
+    auth: OwnerRole,
+    project: Json<InsertProject>,
+    state: Data<AppState>,
+) -> impl Responder {
     if &project.name != "api" {
         state.db.insert_project(project.0).await;
         state.manager.full_sync_with_github().await;
@@ -137,6 +141,7 @@ async fn create_project(project: Json<InsertProject>, state: Data<AppState>) -> 
 #[patch("/apps/{id}")]
 #[tracing::instrument]
 async fn update_project(
+    auth: OwnerRole,
     project: Json<UpdateProject>,
     state: Data<AppState>,
     id: Path<i64>,
@@ -157,7 +162,12 @@ async fn update_project(
 )]
 #[delete("/apps/{id}")]
 #[tracing::instrument]
-async fn delete_project(req: HttpRequest, state: Data<AppState>, id: Path<i64>) -> impl Responder {
+async fn delete_project(
+    auth: OwnerRole,
+    req: HttpRequest,
+    state: Data<AppState>,
+    id: Path<i64>,
+) -> impl Responder {
     req.extensions().get::<TokenClaims>();
     state.db.delete_project(id.into_inner()).await;
     state.manager.sync_with_db().await;
@@ -176,7 +186,12 @@ async fn delete_project(req: HttpRequest, state: Data<AppState>, id: Path<i64>) 
 )]
 #[patch("/apps/{id}/env")]
 #[tracing::instrument]
-async fn upsert_env(env: Json<EnvVar>, state: Data<AppState>, id: Path<i64>) -> impl Responder {
+async fn upsert_env(
+    auth: OwnerRole,
+    env: Json<EnvVar>,
+    state: Data<AppState>,
+    id: Path<i64>,
+) -> impl Responder {
     state
         .db
         .upsert_env(id.into_inner(), &env.0.name, &env.0.value)
@@ -196,7 +211,11 @@ async fn upsert_env(env: Json<EnvVar>, state: Data<AppState>, id: Path<i64>) -> 
 )]
 #[delete("/apps/{id}/env/{name}")]
 #[tracing::instrument]
-async fn delete_env(state: Data<AppState>, path: Path<(i64, String)>) -> impl Responder {
+async fn delete_env(
+    auth: OwnerRole,
+    state: Data<AppState>,
+    path: Path<(i64, String)>,
+) -> impl Responder {
     state.db.delete_env(path.0, &path.1).await;
     // state.manager.sync_with_db().await; // TODO: review if its fine not calling sync here
     HttpResponse::Ok()

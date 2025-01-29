@@ -40,12 +40,13 @@ pub(crate) async fn run_api_server(
     db: Db,
     github: Github,
     api_hostname: &str,
-    coordinator_hostname: String, // TODO: remove
+    secret: String,
 ) -> Result<(), impl Error> {
     let state = AppState {
         db,
         manager: manager.clone(),
         github,
+        secret,
     };
 
     let base_url = format!("https://{api_hostname}");

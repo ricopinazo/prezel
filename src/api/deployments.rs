@@ -5,7 +5,11 @@ use actix_web::{
 };
 
 use crate::{
-    api::{utils::clone_deployment, AppState},
+    api::{
+        bearer::{AnyRole, OwnerRole},
+        utils::clone_deployment,
+        AppState,
+    },
     logging::{read_request_event_logs, Log},
 };
 
@@ -22,7 +26,7 @@ use crate::{
 )]
 #[post("/deployments/redeploy")]
 #[tracing::instrument]
-async fn redeploy(deployment: Json<i64>, state: Data<AppState>) -> impl Responder {
+async fn redeploy(auth: OwnerRole, deployment: Json<i64>, state: Data<AppState>) -> impl Responder {
     clone_deployment(&state.db, deployment.0).await;
     state.manager.sync_with_db().await;
     HttpResponse::Ok()
@@ -39,7 +43,11 @@ async fn redeploy(deployment: Json<i64>, state: Data<AppState>) -> impl Responde
 )]
 #[delete("/deployments/{id}")]
 #[tracing::instrument]
-async fn delete_deployment(state: Data<AppState>, id: Path<i64>) -> impl Responder {
+async fn delete_deployment(
+    auth: OwnerRole,
+    state: Data<AppState>,
+    id: Path<i64>,
+) -> impl Responder {
     state.db.delete_deployment(id.into_inner()).await;
     state.manager.sync_with_db().await;
     HttpResponse::Ok()
@@ -56,7 +64,7 @@ async fn delete_deployment(state: Data<AppState>, id: Path<i64>) -> impl Respond
 )]
 #[post("/sync")]
 #[tracing::instrument]
-async fn sync(state: Data<AppState>) -> impl Responder {
+async fn sync(auth: OwnerRole, state: Data<AppState>) -> impl Responder {
     state.manager.full_sync_with_github().await;
     HttpResponse::Ok()
 }
@@ -74,7 +82,11 @@ async fn sync(state: Data<AppState>) -> impl Responder {
 )]
 #[get("/deployments/{id}/logs")]
 #[tracing::instrument]
-async fn get_deployment_logs(state: Data<AppState>, id: Path<i64>) -> impl Responder {
+async fn get_deployment_logs(
+    auth: AnyRole,
+    state: Data<AppState>,
+    id: Path<i64>,
+) -> impl Responder {
     let id = id.into_inner();
     let app_container = match state.manager.get_deployment(id).await {
         Some(deployment) => deployment.app_container.clone(),
@@ -112,7 +124,11 @@ async fn get_deployment_logs(state: Data<AppState>, id: Path<i64>) -> impl Respo
 )]
 #[get("/deployments/{id}/build")]
 #[tracing::instrument]
-async fn get_deployment_build_logs(state: Data<AppState>, id: Path<i64>) -> impl Responder {
+async fn get_deployment_build_logs(
+    auth: OwnerRole,
+    state: Data<AppState>,
+    id: Path<i64>,
+) -> impl Responder {
     let id = id.into_inner();
     let logs: Vec<Log> = state
         .db

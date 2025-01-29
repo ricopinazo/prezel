@@ -12,6 +12,7 @@ pub(crate) struct TokenClaims {
     pub(crate) role: Role,
 }
 
+// TODO: remove this?
 pub(crate) fn generate_token(claims: TokenClaims, secret: &str) -> String {
     encode(
         &Header::default(),

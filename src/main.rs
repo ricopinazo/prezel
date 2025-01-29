@@ -69,7 +69,7 @@ async fn main() {
     manager.full_sync_with_github().await;
 
     let api_hostname = format!("api.{}", &conf.hostname);
-    run_api_server(manager, db, github, &api_hostname, conf.provider)
+    run_api_server(manager, db, github, &api_hostname, conf.secret)
         .await
         .unwrap();
 }

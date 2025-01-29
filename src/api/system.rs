@@ -1,6 +1,6 @@
 use actix_web::{get, HttpResponse, Responder};
 
-use crate::docker::get_container_execution_logs;
+use crate::{api::bearer::AnyRole, docker::get_container_execution_logs};
 
 /// Hello world
 #[utoipa::path(
@@ -23,7 +23,7 @@ async fn health() -> impl Responder {
     )
 )]
 #[get("/system/logs")]
-async fn get_system_logs() -> impl Responder {
+async fn get_system_logs(auth: AnyRole) -> impl Responder {
     let logs = get_container_execution_logs("prezel").await;
     HttpResponse::Ok().json(logs.collect::<Vec<_>>())
 }

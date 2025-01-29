@@ -78,6 +78,7 @@ pub(crate) struct AppState {
     pub(crate) db: Db,
     pub(crate) manager: Manager,
     pub(crate) github: Github,
+    pub(crate) secret: String,
 }
 
 #[derive(Serialize, ToSchema)]
