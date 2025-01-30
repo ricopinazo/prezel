@@ -12,6 +12,7 @@ use tokio::fs;
 
 use crate::{
     deployment_hooks::StatusHooks,
+    docker::{get_image_id, ImageName},
     env::EnvVars,
     github::Github,
     sqlite_db::{BranchSqliteDb, ProdSqliteDb},
@@ -27,6 +28,7 @@ const DB_PATH_ENV_NAME: &str = "PREZEL_DB_URL";
 #[derive(Clone, Debug)]
 pub(crate) struct CommitContainer {
     github: Github,
+    deployment: i64,
     // main_db_file: HostFile,
     branch_db: Option<BranchSqliteDb>,
     pub(crate) repo_id: i64,
@@ -74,6 +76,7 @@ impl CommitContainer {
         let builder = Self {
             github,
             branch_db,
+            deployment,
             repo_id,
             sha,
             env: extended_env.clone(),
@@ -105,19 +108,29 @@ impl CommitContainer {
             None
         };
 
-        let tempdir = TempDir::new()?;
-        let path = tempdir.as_ref();
-        let path = self.build_context(path).await?;
-        let image = build_dockerfile(&path, self.env.clone(), &mut |chunk| async {
-            if let Some(stream) = chunk.stream {
-                hooks.on_build_log(&stream, false).await
-            } else if let Some(error) = chunk.error {
-                hooks.on_build_log(&error, true).await
-            }
-        })
-        .await?;
+        let name: ImageName = self.deployment.to_string().into();
 
-        Ok(BuildOutput { image, db_setup })
+        if let Some(image) = get_image_id(&name).await {
+            // TODO: only do this on first run?
+            // if build and docker workers do not overlap, I'm safe
+            // the problem might be grabbing this id at the same time the image is being removed
+            // the same happens with containers
+            Ok(BuildOutput { image, db_setup })
+        } else {
+            let tempdir = TempDir::new()?;
+            let path = tempdir.as_ref();
+            let path = self.build_context(path).await?;
+            let image = build_dockerfile(name, &path, self.env.clone(), &mut |chunk| async {
+                if let Some(stream) = chunk.stream {
+                    hooks.on_build_log(&stream, false).await
+                } else if let Some(error) = chunk.error {
+                    hooks.on_build_log(&error, true).await
+                }
+            })
+            .await?;
+
+            Ok(BuildOutput { image, db_setup })
+        }
     }
 
     async fn build_context(&self, path: &Path) -> anyhow::Result<PathBuf> {

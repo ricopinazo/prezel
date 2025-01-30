@@ -30,7 +30,6 @@ pub(crate) struct Deployment {
     pub(crate) created: i64,
     pub(crate) forced_prod: bool, // TODO: review if im using this
     pub(crate) app_container: Arc<Container>, // FIXME: try to remove Arc, only needed to make access to socket/public generic
-                                              // pub(crate) prisma_container: Arc<Container>,
 }
 
 impl Deployment {

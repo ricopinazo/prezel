@@ -116,7 +116,7 @@ impl ContainerStatus {
     }
 }
 
-// Potential problems ot be aware of
+// Potential problems to be aware of
 // - Two builds should not be started at the same time for the same container
 // - Two docker containers should not be created at the same time for the same container
 // - A container that is waiting to be created should not be removed imediately if there are clients actively requesting it
@@ -220,6 +220,7 @@ impl Container {
     #[tracing::instrument]
     async fn build(&self) -> anyhow::Result<()> {
         self.hooks.on_build_started().await;
+
         *self.status.write().await = ContainerStatus::Building;
 
         match self.setup.build(&self.hooks).await {
@@ -237,24 +238,6 @@ impl Container {
         }
         Ok(())
     }
-
-    // // TODO: rename this
-    // #[tracing::instrument]
-    // async fn build_with_result(&self) -> anyhow::Result<String> {
-    //     let tempdir = TempDir::new()?;
-    //     let path = tempdir.as_ref();
-    //     let path = self.setup.setup_build_context(path.to_path_buf()).await?;
-    //     let image = build_dockerfile(&path, self.config.args.clone(), &mut |chunk| async {
-    //         if let Some(stream) = chunk.stream {
-    //             self.hooks.on_build_log(&stream, false).await
-    //         } else if let Some(error) = chunk.error {
-    //             self.hooks.on_build_log(&error, true).await
-    //         }
-    //     })
-    //     .await?;
-
-    //     Ok(image)
-    // }
 
     #[tracing::instrument]
     pub(crate) async fn start(&self) -> anyhow::Result<SocketAddrV4> {
@@ -298,16 +281,6 @@ impl Container {
             bail!("Tried to start container in a state different than StandBy")
         }
     }
-
-    // async fn commit_access(&self) -> anyhow::Result<RwLockReadGuard<ContainerStatus>> {
-    //     let status = self.status.read().await;
-    //     if let ContainerStatus::Ready {last_access, ..} = status.deref() {
-    //         Ok(*last_access.write().await = Instant::now())
-    //             Ok(status)
-    //     } else {
-    //         bail!("the status is other than Ready")
-    //     }
-    // }
 }
 
 #[async_trait]

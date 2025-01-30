@@ -222,7 +222,7 @@ fn logging(session: &Session, ctx: &RequestCtx, logger: &RequestLogger) -> Optio
     let host = session.get_header(header::HOST)?.to_str().ok()?.to_owned();
     let path = session.req_header().uri.path().to_owned();
     let method = session.req_header().method.as_str().to_owned();
-    let deployment = ctx.deployment?;
+    let deployment = ctx.deployment?; // I could also add a header to the incoming request X-Prezel-Request-Id to identify the deployment
     let response = session.response_written()?;
 
     let level = if response.status.is_client_error() || response.status.is_server_error() {
