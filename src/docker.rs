@@ -120,11 +120,22 @@ fn parse_message(message: Bytes) -> Option<(i64, String)> {
     Some((millis, content.to_owned()))
 }
 
-pub(crate) async fn get_image_id(name: &ImageName) -> Option<String> {
+pub(crate) async fn get_managed_image_id(name: &ImageName) -> Option<String> {
+    get_image_id(&name.to_docker_name()).await
+}
+
+pub(crate) async fn get_image_id(name: &str) -> Option<String> {
     let docker = docker_client();
-    let image = docker.inspect_image(&name.to_docker_name()).await;
-    dbg!(&image);
+    let image = docker.inspect_image(name).await;
     image.ok()?.id
+}
+
+pub(crate) async fn get_prezel_image_version() -> Option<String> {
+    let docker = docker_client();
+    let container = docker.inspect_container("prezel", None).await.ok()?;
+    let image = docker.inspect_image(&container.image?).await.ok()?;
+    let image_name = image.repo_tags?.pop()?;
+    Some(image_name.replace("prezel/prezel:", ""))
 }
 
 pub(crate) async fn pull_image(image: &str) {
@@ -142,18 +153,12 @@ pub(crate) async fn pull_image(image: &str) {
         .await;
 }
 
-// #[tracing::instrument]
 pub(crate) async fn create_container<'a, I: Iterator<Item = &'a HostFile>>(
     image: String,
     env: EnvVars,
     host_files: I,
     command: Option<String>,
 ) -> anyhow::Result<String> {
-    let entrypoint = command
-        .is_some()
-        .then(|| vec!["sh".to_owned(), "-c".to_owned()]);
-    let cmd = command.map(|command| vec![command]);
-    let docker = docker_client();
     let binds = host_files
         .map(|file| {
             let host = file.get_host_folder().to_str().unwrap().to_owned();
@@ -161,6 +166,20 @@ pub(crate) async fn create_container<'a, I: Iterator<Item = &'a HostFile>>(
             format!("{host}:{container}")
         })
         .collect();
+    create_container_with_explicit_binds(image, env, binds, command).await
+}
+
+pub(crate) async fn create_container_with_explicit_binds(
+    image: String,
+    env: EnvVars,
+    binds: Vec<String>,
+    command: Option<String>,
+) -> anyhow::Result<String> {
+    let entrypoint = command
+        .is_some()
+        .then(|| vec!["sh".to_owned(), "-c".to_owned()]);
+    let cmd = command.map(|command| vec![command]);
+    let docker = docker_client();
 
     let id = nanoid!(21, &alphabet::LOWERCASE_PLUS_NUMBERS);
     let name = format!("{CONTAINER_PREFIX}{id}",);

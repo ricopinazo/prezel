@@ -29,7 +29,9 @@ pub(crate) const API_PORT: u16 = 5045;
 #[openapi(
     paths(
         system::health,
+        system::get_system_version,
         system::get_system_logs,
+        system::update_version,
         apps::get_projects,
         apps::get_project,
         apps::create_project,
@@ -55,7 +57,9 @@ fn configure_service(store: Data<AppState>) -> impl FnOnce(&mut ServiceConfig) {
         config
             .app_data(store)
             .service(system::health)
+            .service(system::get_system_version)
             .service(system::get_system_logs)
+            .service(system::update_version)
             .service(apps::get_projects)
             .service(apps::get_project)
             .service(apps::create_project)

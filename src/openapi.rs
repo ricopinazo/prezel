@@ -19,6 +19,7 @@ mod paths;
 mod sqlite_db;
 mod time;
 mod tls;
+mod tokens;
 
 fn main() {
     let openapi = get_open_api();

@@ -12,7 +12,7 @@ use tokio::fs;
 
 use crate::{
     deployment_hooks::StatusHooks,
-    docker::{get_image_id, ImageName},
+    docker::{get_managed_image_id, ImageName},
     env::EnvVars,
     github::Github,
     sqlite_db::{BranchSqliteDb, ProdSqliteDb},
@@ -110,7 +110,7 @@ impl CommitContainer {
 
         let name: ImageName = self.deployment.to_string().into();
 
-        if let Some(image) = get_image_id(&name).await {
+        if let Some(image) = get_managed_image_id(&name).await {
             // TODO: only do this on first run?
             // if build and docker workers do not overlap, I'm safe
             // the problem might be grabbing this id at the same time the image is being removed
