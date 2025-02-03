@@ -67,7 +67,7 @@ pub(crate) struct NoopHooks;
 
 #[async_trait]
 impl DeploymentHooks for NoopHooks {
-    async fn on_build_log(&self, _output: &str, error: bool) {}
+    async fn on_build_log(&self, _output: &str, _error: bool) {}
     async fn on_build_started(&self) {}
     async fn on_build_finished(&self) {}
     async fn on_build_failed(&self) {}

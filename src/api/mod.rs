@@ -17,7 +17,6 @@ use crate::{
 mod apps;
 mod bearer;
 mod deployments;
-mod security;
 pub(crate) mod server;
 mod system;
 mod utils;

@@ -325,7 +325,7 @@ pub(crate) fn run_proxy(manager: Manager, config: Conf, store: CertificateStore)
     // TODO: tls_settings.enable_h2();
 
     let cloned = store.clone();
-    tls_settings.set_servername_callback(move |ssl, alert| {
+    tls_settings.set_servername_callback(move |ssl, _alert| {
         let domain = ssl.servername(NameType::HOST_NAME);
         if let Some(domain) = domain {
             if let Some(TlsState::Ready(certificate)) = cloned.get_domain(domain) {

@@ -3,12 +3,12 @@ use flate2::read::GzDecoder;
 use http::StatusCode;
 use http_body_util::BodyExt;
 use octocrab::{
-    models::{pulls::PullRequest, InstallationRepositories, IssueState, Repository},
+    models::{pulls::PullRequest, IssueState, Repository},
     params::{
         checks::{CheckRunConclusion, CheckRunStatus},
         repos::Commitish,
     },
-    Octocrab, Result as OctocrabResult,
+    Octocrab,
 };
 use serde::Serialize;
 use std::{collections::HashMap, io::Cursor, path::Path, sync::Arc};

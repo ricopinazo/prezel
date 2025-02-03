@@ -114,7 +114,7 @@ async fn get_project(auth: AnyRole, state: Data<AppState>, name: Path<String>) -
 )]
 #[post("/apps")] // TODO: return project when successfully inserted
 async fn create_project(
-    auth: OwnerRole,
+    _auth: OwnerRole,
     project: Json<InsertProject>,
     state: Data<AppState>,
 ) -> impl Responder {

@@ -34,7 +34,7 @@ async fn health() -> impl Responder {
     )
 )]
 #[get("/system/version")]
-async fn get_system_version(auth: AnyRole) -> impl Responder {
+async fn get_system_version(_auth: AnyRole) -> impl Responder {
     match get_prezel_image_version().await {
         Some(version) => HttpResponse::Ok().json(version),
         None => HttpResponse::InternalServerError().json("internal server error"),
@@ -51,7 +51,7 @@ async fn get_system_version(auth: AnyRole) -> impl Responder {
     )
 )]
 #[get("/system/logs")]
-async fn get_system_logs(auth: AnyRole) -> impl Responder {
+async fn get_system_logs(_auth: AnyRole) -> impl Responder {
     let logs = get_container_execution_logs("prezel").await;
     HttpResponse::Ok().json(logs.collect::<Vec<_>>())
 }
@@ -68,7 +68,7 @@ async fn get_system_logs(auth: AnyRole) -> impl Responder {
     )
 )]
 #[post("/system/update")]
-async fn update_version(auth: OwnerRole, version: Json<String>) -> impl Responder {
+async fn update_version(_auth: OwnerRole, version: Json<String>) -> impl Responder {
     dbg!();
     match run_update_container(&version.0).await {
         Ok(()) => HttpResponse::Ok().finish(),

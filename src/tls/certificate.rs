@@ -1,10 +1,8 @@
 use std::{
-    fs::{self, create_dir_all, File},
-    io,
+    fs::{self, create_dir_all},
     path::{Path, PathBuf},
 };
 
-use anyhow::ensure;
 use futures::{stream, StreamExt};
 use openssl::asn1::Asn1Time;
 use pingora::tls;

@@ -1,11 +1,11 @@
-use std::{backtrace::Backtrace, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use futures::{stream, StreamExt};
 use tokio::sync::{RwLock, RwLockReadGuard};
 
 use crate::{
     container::Container, db::Db, github::Github, label::Label, sqlite_db::SqliteDbSetup,
-    time::now, tls::CertificateStore,
+    tls::CertificateStore,
 };
 
 use super::{

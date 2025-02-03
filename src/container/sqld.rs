@@ -1,6 +1,4 @@
-use crate::{
-    deployment_hooks::NoopHooks, deployments::worker::WorkerHandle, env::EnvVars, paths::HostFile,
-};
+use crate::{deployment_hooks::NoopHooks, deployments::worker::WorkerHandle, paths::HostFile};
 
 use super::{BuildResult, Container, ContainerConfig, ContainerSetup, ContainerStatus};
 

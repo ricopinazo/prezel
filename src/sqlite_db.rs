@@ -4,7 +4,7 @@ use std::{
 };
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use jsonwebtoken::{DecodingKey, EncodingKey};
+use jsonwebtoken::EncodingKey;
 use ring::signature::{Ed25519KeyPair, KeyPair};
 use serde::Serialize;
 

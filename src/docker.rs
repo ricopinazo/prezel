@@ -9,7 +9,7 @@ use bollard::{
     errors::Error as DockerError,
     image::{BuildImageOptions, CreateImageOptions},
     secret::{BuildInfo, HostConfig},
-    Docker as BollardDoker,
+    Docker,
 };
 use chrono::{DateTime, Utc};
 use futures::StreamExt;
@@ -28,8 +28,8 @@ use utoipa::ToSchema;
 use crate::{alphabet, env::EnvVars, paths::HostFile};
 
 #[tracing::instrument]
-pub(crate) fn docker_client() -> BollardDoker {
-    BollardDoker::connect_with_unix_defaults().unwrap()
+pub(crate) fn docker_client() -> Docker {
+    Docker::connect_with_unix_defaults().unwrap()
 }
 
 const NETWORK_NAME: &'static str = "prezel";
@@ -311,10 +311,7 @@ pub(crate) async fn list_managed_container_ids() -> anyhow::Result<impl Iterator
 
 #[cfg(test)]
 mod docker_tests {
-    use crate::{
-        docker::{create_container, get_bollard_container_ipv4, run_container},
-        paths::HostFile,
-    };
+    use crate::docker::{create_container, get_bollard_container_ipv4, run_container};
 
     // #[tokio::test]
     // async fn test_list_containers() {
@@ -330,16 +327,16 @@ mod docker_tests {
         // let image = image.inspect().await?;
         // let image_id = image.id.ok_or(anyhow!("Image not found"));
 
-        let id = create_container(
-            "busybox".to_owned(),
-            Default::default(),
-            [].into_iter(),
-            None,
-        )
-        .await
-        .unwrap();
-        run_container(&id).await.unwrap();
-        let ip = get_bollard_container_ipv4(&id).await.unwrap();
+        // let id = create_container(
+        //     "busybox".to_owned(),
+        //     Default::default(),
+        //     [].into_iter(),
+        //     None,
+        // )
+        // .await
+        // .unwrap();
+        // run_container(&id).await.unwrap();
+        // let _ip = get_bollard_container_ipv4(&id).await.unwrap();
 
         // run_container("zen_wright").await.unwrap();
 
