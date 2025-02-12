@@ -113,6 +113,7 @@ async fn get_project(auth: AnyRole, state: Data<AppState>, name: Path<String>) -
     )
 )]
 #[post("/apps")] // TODO: return project when successfully inserted
+#[tracing::instrument]
 async fn create_project(
     _auth: OwnerRole,
     project: Json<InsertProject>,

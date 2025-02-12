@@ -125,6 +125,7 @@ struct LibsqlDb {
 }
 
 impl LibsqlDb {
+    #[tracing::instrument]
     fn new(
         db_setup: SqliteDbSetup,
         deployment_url_id: Option<String>,
@@ -175,6 +176,7 @@ struct ApiDeployment {
 // TODO: move this somewhere else
 impl ApiDeployment {
     // TODO: make info an option so deployments can show up in the API before the manager reads them
+    #[tracing::instrument]
     async fn from(
         deployment: Option<&Deployment>,
         db_deployment: &DeploymentWithProject,
@@ -184,7 +186,7 @@ impl ApiDeployment {
     ) -> Self {
         let (status, url, prod_url, custom_urls, app_container, libsql_db) =
             if let Some(deployment) = deployment {
-                let container_status = deployment.app_container.status.read().await;
+                let container_status = deployment.app_container.status.read().await.clone();
                 let status = container_status.to_status();
 
                 let project_name = &db_deployment.project.name;

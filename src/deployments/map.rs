@@ -41,6 +41,7 @@ impl DeploymentMap {
         }
     }
 
+    #[tracing::instrument]
     pub(crate) fn iter_containers(&self) -> impl Stream<Item = Arc<Container>> + Send + '_ {
         let prod_dbs = self.dbs.values().map(|db| db.setup.container.clone());
         let deployments = stream::iter(self.deployments.iter())
@@ -48,30 +49,36 @@ impl DeploymentMap {
         stream::iter(prod_dbs).chain(deployments)
     }
 
+    #[tracing::instrument]
     pub(crate) fn get_deployment(&self, project: &str, deployment: &str) -> Option<&Deployment> {
         let project_id = self.names.get(project)?;
         self.deployments.get(&(*project_id, deployment.to_string()))
     }
 
+    #[tracing::instrument]
     fn get_prod_from_id(&self, id: i64) -> Option<&Deployment> {
         let prod_id = self.prod.get(&id)?;
         self.deployments.get(&(id, prod_id.to_string()))
     }
 
+    #[tracing::instrument]
     pub(crate) fn get_prod(&self, project: &str) -> Option<&Deployment> {
         let project_id = self.names.get(project)?;
         self.get_prod_from_id(*project_id)
     }
 
+    #[tracing::instrument]
     pub(crate) fn get_prod_db(&self, id: i64) -> Option<SqliteDbSetup> {
         self.dbs.get(&id).map(|db| db.setup.clone())
     }
 
+    #[tracing::instrument]
     pub(crate) fn get_prod_db_by_name(&self, project: &str) -> Option<SqliteDbSetup> {
         let id = self.names.get(project)?;
         self.get_prod_db(*id)
     }
 
+    #[tracing::instrument]
     pub(crate) fn get_custom_domain(&self, domain: &str) -> Option<&Deployment> {
         let project = self.custom_domains.get(domain)?;
         self.get_prod_from_id(*project)
@@ -79,6 +86,7 @@ impl DeploymentMap {
 
     // TODO: this is currently kind of a mutex because is getting &mut,
     // but if that ever changes, I might need a way to make it mutex again
+    #[tracing::instrument]
     pub(crate) async fn read_db_and_build_updates(
         &mut self,
         build_queue: &WorkerHandle,
@@ -253,6 +261,7 @@ impl DeploymentMap {
         }
     }
 
+    #[tracing::instrument]
     fn iter_prod_deployments(&self) -> impl Iterator<Item = &Deployment> {
         self.names
             .keys()
@@ -260,6 +269,7 @@ impl DeploymentMap {
     }
 
     // TODO: once I get this to be Send, change signature back to async fn ...
+    #[tracing::instrument]
     fn get_all_non_prod_containers(&self) -> impl Future<Output = Vec<Arc<Container>>> + Send + '_ {
         let prod_deployment_ids = self
             .iter_prod_deployments()

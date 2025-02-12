@@ -23,10 +23,11 @@ pub(crate) fn generate_token(claims: TokenClaims, secret: &str) -> String {
 }
 
 pub(crate) fn decode_token(token: &str, secret: &str) -> anyhow::Result<TokenClaims> {
-    let decoded = decode::<TokenClaims>(
+    let result = decode::<TokenClaims>(
         token,
         &DecodingKey::from_secret(secret.as_ref()),
         &Validation::new(Algorithm::HS256),
-    )?;
+    );
+    let decoded = result?;
     Ok(decoded.claims)
 }

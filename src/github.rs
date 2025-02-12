@@ -56,6 +56,7 @@ impl Github {
         }
     }
 
+    #[tracing::instrument]
     pub(crate) async fn get_open_pulls(&self, repo_id: i64) -> anyhow::Result<Vec<PullRequest>> {
         let crab = self.get_crab(repo_id).await?;
         let (owner, name) = self.get_owner_and_name(repo_id).await?;
@@ -66,6 +67,7 @@ impl Github {
             .collect())
     }
 
+    #[tracing::instrument]
     pub(crate) async fn get_repo(&self, id: i64) -> anyhow::Result<Option<Repository>> {
         let crab = self.get_crab(id).await?;
         Ok(crab
@@ -74,12 +76,14 @@ impl Github {
             .unwrap())
     }
 
+    #[tracing::instrument]
     pub(crate) async fn get_pull(&self, repo_id: i64, number: u64) -> anyhow::Result<PullRequest> {
         let crab = self.get_crab(repo_id).await?;
         let (owner, name) = self.get_owner_and_name(repo_id).await?;
         Ok(crab.pulls(owner, name).get(number).await?)
     }
 
+    #[tracing::instrument]
     pub(crate) async fn get_default_branch(&self, repo_id: i64) -> anyhow::Result<String> {
         let crab = self.get_crab(repo_id).await?;
         let (owner, name) = self.get_owner_and_name(repo_id).await?;
@@ -87,6 +91,7 @@ impl Github {
         Ok(repository.default_branch.unwrap())
     }
 
+    #[tracing::instrument]
     pub(crate) async fn get_latest_commit(
         &self,
         repo_id: i64,
@@ -97,6 +102,7 @@ impl Github {
         Ok(Self::get_latest_commit_option(&crab, &owner, &name, branch).await)
     }
 
+    #[tracing::instrument]
     async fn get_latest_commit_option(
         crab: &Octocrab,
         owner: &str,
@@ -113,6 +119,7 @@ impl Github {
         })
     }
 
+    #[tracing::instrument]
     pub(crate) async fn download_commit(
         &self,
         repo_id: i64,
@@ -141,6 +148,7 @@ impl Github {
         Ok(())
     }
 
+    #[tracing::instrument]
     pub(crate) async fn upsert_pull_check(
         &self,
         repo_id: i64,
@@ -187,6 +195,7 @@ impl Github {
         Ok(())
     }
 
+    #[tracing::instrument]
     pub(crate) async fn upsert_pull_comment(
         &self,
         repo_id: i64,
@@ -231,11 +240,13 @@ impl Github {
     }
 
     // TODO: make this receive crab as argument
+    #[tracing::instrument]
     async fn get_owner_and_name(&self, id: i64) -> anyhow::Result<(String, String)> {
         let repo = self.get_repo(id).await?.unwrap();
         Ok((repo.owner.unwrap().login, repo.name))
     }
 
+    #[tracing::instrument]
     async fn get_crab(&self, repo_id: i64) -> anyhow::Result<Octocrab> {
         let secret = self.update_token(repo_id).await?;
         Ok(octocrab::OctocrabBuilder::default()
@@ -244,6 +255,7 @@ impl Github {
             .unwrap())
     }
 
+    #[tracing::instrument]
     async fn update_token(&self, repo_id: i64) -> anyhow::Result<String> {
         let mut tokens = self.tokens.write().await;
         let token = tokens.get(&repo_id);
@@ -263,6 +275,7 @@ fn is_token_too_old(token: &Token) -> bool {
     age > 30 * 60 * 1000
 }
 
+#[tracing::instrument]
 async fn get_installation_access_token(repo: i64) -> anyhow::Result<Token> {
     let Conf {
         provider,

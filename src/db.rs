@@ -73,7 +73,7 @@ pub(crate) struct UpdateProject {
     custom_domains: Option<Vec<String>>,
 }
 
-#[derive(FromRow)]
+#[derive(FromRow, Debug)]
 struct PlainDeployment {
     pub(crate) id: i64,
     pub(crate) url_id: String,
@@ -88,6 +88,7 @@ struct PlainDeployment {
     pub(crate) project: i64,
 }
 
+#[derive(Debug)]
 pub(crate) struct Deployment {
     pub(crate) id: i64,
     pub(crate) url_id: String,
@@ -118,6 +119,7 @@ pub(crate) struct BuildLog {
     pub(crate) deployment: i64,
 }
 
+#[derive(Debug)]
 pub(crate) struct DeploymentWithProject {
     pub(crate) deployment: Deployment,
     pub(crate) project: Arc<Project>,
@@ -131,6 +133,7 @@ impl Deref for DeploymentWithProject {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct InsertDeployment {
     pub(crate) env: Vec<EditedEnvVar>,
     pub(crate) sha: String,
@@ -150,6 +153,7 @@ pub(crate) struct Db {
 }
 
 impl Db {
+    #[tracing::instrument]
     pub(crate) async fn setup() -> Self {
         let db_path = get_instance_db_path();
         let db_path_str = db_path.to_str().expect("Path to DB coud not be generated");
@@ -175,6 +179,7 @@ impl Db {
     }
 
     // TODO: try to make the manager have access only to the read methods in here
+    #[tracing::instrument]
     pub(crate) async fn get_project(&self, id: i64) -> Option<Project> {
         let project = sqlx::query_as!(
             PlainProject,
@@ -188,6 +193,7 @@ impl Db {
         Some(self.append_extra_project_info(project).await)
     }
 
+    #[tracing::instrument]
     pub(crate) async fn get_project_by_name(&self, name: &str) -> Option<Project> {
         let project = sqlx::query_as!(
             PlainProject,
@@ -200,6 +206,7 @@ impl Db {
         Some(self.append_extra_project_info(project).await)
     }
 
+    #[tracing::instrument]
     pub(crate) async fn get_projects(&self) -> Vec<Project> {
         let projects = sqlx::query_as!(PlainProject, "select * from projects")
             .fetch_all(&self.conn)
@@ -212,6 +219,7 @@ impl Db {
             .await
     }
 
+    #[tracing::instrument]
     async fn append_extra_project_info(&self, project: PlainProject) -> Project {
         let custom_domains = sqlx::query!("select * from domains where project = ?", project.id)
             .fetch_all(&self.conn)
@@ -241,6 +249,7 @@ impl Db {
         }
     }
 
+    #[tracing::instrument]
     pub(crate) async fn insert_project(
         &self,
         InsertProject {
@@ -276,6 +285,7 @@ impl Db {
         }
     }
 
+    #[tracing::instrument]
     pub(crate) async fn update_project(
         &self,
         id: i64,
@@ -311,6 +321,7 @@ impl Db {
         }
     }
 
+    #[tracing::instrument]
     pub(crate) async fn delete_project(&self, id: i64) {
         sqlx::query!("delete from projects where id = ?", id)
             .execute(&self.conn)
@@ -318,6 +329,7 @@ impl Db {
             .unwrap();
     }
 
+    #[tracing::instrument]
     pub(crate) async fn upsert_env(&self, project: i64, name: &str, value: &str) {
         let edited = time::now();
         sqlx::query!(
@@ -334,6 +346,7 @@ impl Db {
         .unwrap();
     }
 
+    #[tracing::instrument]
     pub(crate) async fn delete_env(&self, project: i64, name: &str) {
         sqlx::query!(
             "delete from env where project = ? and name = ?",
@@ -345,6 +358,7 @@ impl Db {
         .unwrap();
     }
 
+    #[tracing::instrument]
     pub(crate) async fn get_deployment(&self, deployment: i64) -> Option<Deployment> {
         let plain_deployment = sqlx::query_as!(
             PlainDeployment,
@@ -359,6 +373,7 @@ impl Db {
     }
 
     // TODO: just return stream here?
+    #[tracing::instrument]
     pub(crate) async fn get_deployments(&self) -> Vec<Deployment> {
         let deployments = sqlx::query_as!(
             PlainDeployment,
@@ -374,6 +389,7 @@ impl Db {
             .await
     }
 
+    #[tracing::instrument]
     async fn append_extra_deployment_info(&self, deployment: PlainDeployment) -> Deployment {
         let env = sqlx::query_as!(
             EnvVar,
@@ -400,6 +416,7 @@ impl Db {
         }
     }
 
+    #[tracing::instrument]
     pub(crate) async fn delete_deployment(&self, id: i64) {
         sqlx::query!("delete from deployments where id = ?", id)
             .execute(&self.conn)
@@ -408,6 +425,7 @@ impl Db {
     }
 
     // TODO: implement this using SQL
+    #[tracing::instrument]
     pub(crate) async fn get_latest_successful_prod_deployment_for_project(
         &self,
         project: i64,
@@ -423,6 +441,7 @@ impl Db {
         deployments.pop()
     }
 
+    #[tracing::instrument]
     pub(crate) async fn get_deployment_with_project(
         &self,
         deployment: i64,
@@ -435,6 +454,7 @@ impl Db {
         })
     }
 
+    #[tracing::instrument]
     pub(crate) async fn get_deployments_with_project(
         &self,
     ) -> impl Iterator<Item = DeploymentWithProject> {
@@ -453,6 +473,7 @@ impl Db {
             })
     }
 
+    #[tracing::instrument]
     pub(crate) async fn insert_deployment(&self, deployment: InsertDeployment) {
         let created = time::now();
         let url_id = create_deployment_url_id();
@@ -484,6 +505,7 @@ impl Db {
         }
     }
 
+    #[tracing::instrument]
     pub(crate) async fn update_deployment_result(&self, id: i64, status: BuildResult) {
         sqlx::query!("update deployments set result = ? where id = ?", status, id)
             .execute(&self.conn)
@@ -491,6 +513,7 @@ impl Db {
             .unwrap();
     }
 
+    #[tracing::instrument]
     pub(crate) async fn update_deployment_build_start(&self, id: i64, build_started: i64) {
         sqlx::query!(
             "update deployments set build_started = ? where id = ?",
@@ -502,6 +525,7 @@ impl Db {
         .unwrap();
     }
 
+    #[tracing::instrument]
     pub(crate) async fn update_deployment_build_end(&self, id: i64, build_finished: i64) {
         sqlx::query!(
             "update deployments set build_finished = ? where id = ?",
@@ -513,6 +537,7 @@ impl Db {
         .unwrap();
     }
 
+    #[tracing::instrument]
     pub(crate) async fn reset_deployment_build_end(&self, id: i64) {
         sqlx::query!(
             "update deployments set build_finished = NULL where id = ?",
@@ -523,6 +548,7 @@ impl Db {
         .unwrap();
     }
 
+    #[tracing::instrument]
     pub(crate) async fn get_deployment_build_logs(&self, deployment: i64) -> Vec<BuildLog> {
         sqlx::query_as!(
             BuildLog,
@@ -534,6 +560,7 @@ impl Db {
         .unwrap()
     }
 
+    #[tracing::instrument]
     pub(crate) async fn insert_deployment_build_log(
         &self,
         deployment: i64,
@@ -554,6 +581,7 @@ impl Db {
         .unwrap();
     }
 
+    #[tracing::instrument]
     pub(crate) async fn clear_deployment_build_logs(&self, deployment: i64) {
         sqlx::query!("delete from build where build.deployment = ?", deployment)
             .execute(&self.conn)
@@ -561,6 +589,7 @@ impl Db {
             .unwrap();
     }
 
+    #[tracing::instrument]
     pub(crate) async fn hash_exists_for_project(&self, sha: &str, project: i64) -> bool {
         sqlx::query!(
             "select id from deployments where deployments.sha=? and deployments.project=?",

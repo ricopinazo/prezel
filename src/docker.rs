@@ -133,9 +133,7 @@ pub(crate) async fn get_image_id(name: &str) -> Option<String> {
 pub(crate) async fn get_prezel_image_version() -> Option<String> {
     let docker = docker_client();
     let container = docker.inspect_container("prezel", None).await.ok()?;
-    let image = docker.inspect_image(&container.image?).await.ok()?;
-    let image_name = image.repo_tags?.pop()?;
-    Some(image_name.replace("prezel/prezel:", ""))
+    Some(container.config?.image?.replace("prezel/prezel:", ""))
 }
 
 pub(crate) async fn pull_image(image: &str) {

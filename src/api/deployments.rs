@@ -89,7 +89,7 @@ async fn get_deployment_logs(
 ) -> impl Responder {
     let id = id.into_inner();
     let app_container = match state.manager.get_deployment(id).await {
-        Some(deployment) => deployment.app_container.clone(),
+        Some(deployment) => deployment.app_container,
         None => return HttpResponse::NotFound().json("not found"),
     };
 

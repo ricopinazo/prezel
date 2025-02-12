@@ -45,14 +45,14 @@ pub(super) async fn get_all_deployments(
         stream::iter(db_deployments.filter(|deployment| deployment.deployment.project == project))
             .then(|db_deployment| async move {
                 let deployment = manager.get_deployment(db_deployment.deployment.id).await;
-                let is_prod = if let Some(deployment) = deployment.as_deref() {
+                let is_prod = if let Some(deployment) = &deployment {
                     let prod_url_id = manager.get_prod_url_id(project).await; // TODO: move this outside
                     Some(&deployment.url_id) == prod_url_id.as_ref()
                 } else {
                     false
                 };
                 ApiDeployment::from(
-                    deployment.as_deref(),
+                    deployment.as_ref(),
                     &db_deployment,
                     is_prod,
                     box_domain,

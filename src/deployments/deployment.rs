@@ -18,7 +18,7 @@ use crate::{
 
 use super::worker::WorkerHandle;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct Deployment {
     pub(crate) branch: String,
     pub(crate) default_branch: bool,

@@ -17,3 +17,6 @@ openapi:
 
 restore:
 	mv /tmp/prezel-cargo.backup Cargo.toml
+
+openapi-client: openapi
+	openapi-generator generate -i docs/public/openapi.json -g rust -o ./client

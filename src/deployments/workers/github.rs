@@ -6,13 +6,14 @@ use crate::{
     github::{Commit, Github},
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct GithubWorker {
     pub(crate) github: Github,
     pub(crate) db: Db,
 }
 
 impl Worker for GithubWorker {
+    #[tracing::instrument]
     fn work(&self) -> impl std::future::Future<Output = ()> + Send {
         async {
             for Project {
@@ -73,6 +74,7 @@ impl Worker for GithubWorker {
     }
 }
 
+#[tracing::instrument]
 async fn get_default_branch_and_latest_commit(
     github: &Github,
     repo_id: i64,
@@ -82,6 +84,7 @@ async fn get_default_branch_and_latest_commit(
     Ok((default_branch, commit))
 }
 
+#[tracing::instrument]
 async fn add_deployment_to_db_if_missing(db: &Db, deployment: InsertDeployment) {
     if !db
         .hash_exists_for_project(&deployment.sha, deployment.project)

@@ -107,6 +107,7 @@ impl ContainerStatus {
 
     // TODO: create get_db_container alternative and use it in all the appropriate places
     // or maybe simply implement to_container for Option<SqliteDbSetup>
+    #[tracing::instrument]
     pub(crate) fn get_db_setup(&self) -> Option<SqliteDbSetup> {
         match self {
             Self::StandBy { db_setup, .. } => db_setup.clone(),
@@ -182,7 +183,7 @@ impl Container {
         };
     }
 
-    // TODO: this i pointless now, just a thin wrapper
+    // FIXME: this i pointless now, just a thin wrapper
     #[tracing::instrument]
     pub(crate) async fn setup_as_standby(&self) -> anyhow::Result<()> {
         self.build().await?;

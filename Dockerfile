@@ -4,6 +4,7 @@ WORKDIR /app
 
 FROM chef AS planner
 COPY . .
+RUN sed -i 's/openapi = { path = "\.\/client" }//g' Cargo.toml # cargo cheff doesn't like the local dev-dependency
 RUN cargo chef prepare  --recipe-path recipe.json
 
 FROM chef AS builder

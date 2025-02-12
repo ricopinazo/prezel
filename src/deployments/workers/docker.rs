@@ -7,6 +7,7 @@ use crate::{
     docker::{delete_container, list_managed_container_ids, stop_container},
 };
 
+#[derive(Debug)]
 pub(crate) struct DockerWorker {
     pub(crate) map: Arc<InstrumentedRwLock<DeploymentMap>>,
 }
@@ -31,6 +32,7 @@ impl Worker for DockerWorker {
 
 impl DockerWorker {
     // TODO: make this O(N) instead of O(N²)
+    #[tracing::instrument]
     async fn is_container_in_use(&self, id: &String) -> bool {
         let map = self.map.read().await;
         let mut containers = map.iter_containers();
