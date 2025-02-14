@@ -280,14 +280,13 @@ async fn get_installation_access_token(repo: i64) -> anyhow::Result<Token> {
     let Conf {
         provider,
         secret,
-        hostname: id,
+        hostname,
     } = Conf::read();
 
     let client = reqwest::Client::new();
-    let url = format!("{provider}/api/instance/token");
-    let json = RequestBody { id, secret, repo };
+    let url = format!("{provider}/api/instance/token/{hostname}/{repo}");
     info!("requesting Github installation token from {url}");
-    let response = client.post(url).json(&json).send().await?;
+    let response = client.get(url).bearer_auth(secret).send().await?;
     ensure!(response.status() == StatusCode::OK);
     let secret = response.text().await?;
     Ok(Token {

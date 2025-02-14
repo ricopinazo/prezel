@@ -24,7 +24,7 @@ use crate::{
         ("api_key" = [])
     )
 )]
-#[post("/deployments/redeploy")]
+#[post("/api/deployments/redeploy")]
 #[tracing::instrument]
 async fn redeploy(auth: OwnerRole, deployment: Json<i64>, state: Data<AppState>) -> impl Responder {
     clone_deployment(&state.db, deployment.0).await;
@@ -41,7 +41,7 @@ async fn redeploy(auth: OwnerRole, deployment: Json<i64>, state: Data<AppState>)
         ("api_key" = [])
     )
 )]
-#[delete("/deployments/{id}")]
+#[delete("/api/deployments/{id}")]
 #[tracing::instrument]
 async fn delete_deployment(
     auth: OwnerRole,
@@ -62,7 +62,7 @@ async fn delete_deployment(
         ("api_key" = [])
     )
 )]
-#[post("/sync")]
+#[post("/api/deployments/sync")]
 #[tracing::instrument]
 async fn sync(auth: OwnerRole, state: Data<AppState>) -> impl Responder {
     state.manager.full_sync_with_github().await;
@@ -80,7 +80,7 @@ async fn sync(auth: OwnerRole, state: Data<AppState>) -> impl Responder {
         ("api_key" = [])
     )
 )]
-#[get("/deployments/{id}/logs")]
+#[get("/api/deployments/{id}/logs")]
 #[tracing::instrument]
 async fn get_deployment_logs(
     auth: AnyRole,
@@ -122,7 +122,7 @@ async fn get_deployment_logs(
         ("api_key" = [])
     )
 )]
-#[get("/deployments/{id}/build")]
+#[get("/api/deployments/{id}/build")]
 #[tracing::instrument]
 async fn get_deployment_build_logs(
     auth: OwnerRole,

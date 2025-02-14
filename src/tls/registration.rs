@@ -164,7 +164,7 @@ async fn write_dns_challenge(handle: Arc<ChallengeTask>, conf: &Conf) {
     let url = format!("{provider}/api/instance/dns/{hostname}");
     let query = client
         .post(url)
-        .header("X-API-Key", secret) // FIXME: change this to use Bearer and remove X-Instance-ID
+        .bearer_auth(secret)
         .body(challenge_response)
         .send();
     let response = query.await.unwrap();
@@ -174,14 +174,7 @@ async fn write_dns_challenge(handle: Arc<ChallengeTask>, conf: &Conf) {
     loop {
         let client = reqwest::Client::new();
         let url = format!("{provider}/api/instance/dns/{hostname}");
-        let response = client
-            .get(url)
-            .header("X-API-Key", secret)
-            .header("X-Instance-ID", hostname)
-            // .body("some body")
-            .send()
-            .await
-            .unwrap();
+        let response = client.get(url).bearer_auth(secret).send().await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let Ready { ready } = response.json().await.unwrap();
         if ready {

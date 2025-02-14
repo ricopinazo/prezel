@@ -24,7 +24,7 @@ use crate::{
         ("api_key" = [])
     )
 )]
-#[get("/apps")]
+#[get("/api/apps")]
 #[tracing::instrument]
 async fn get_projects(auth: AnyRole, state: Data<AppState>) -> impl Responder {
     let projects = state.db.get_projects().await;
@@ -67,7 +67,7 @@ async fn get_projects(auth: AnyRole, state: Data<AppState>) -> impl Responder {
         ("api_key" = [])
     )
 )]
-#[get("/apps/{name}")]
+#[get("/api/apps/{name}")]
 #[tracing::instrument]
 async fn get_project(auth: AnyRole, state: Data<AppState>, name: Path<String>) -> impl Responder {
     let name = name.into_inner();
@@ -112,7 +112,7 @@ async fn get_project(auth: AnyRole, state: Data<AppState>, name: Path<String>) -
         ("api_key" = [])
     )
 )]
-#[post("/apps")] // TODO: return project when successfully inserted
+#[post("/api/apps")] // TODO: return project when successfully inserted
 #[tracing::instrument]
 async fn create_project(
     _auth: OwnerRole,
@@ -139,7 +139,7 @@ async fn create_project(
         ("api_key" = [])
     )
 )]
-#[patch("/apps/{id}")]
+#[patch("/api/apps/{id}")]
 #[tracing::instrument]
 async fn update_project(
     auth: OwnerRole,
@@ -161,7 +161,7 @@ async fn update_project(
         ("api_key" = [])
     )
 )]
-#[delete("/apps/{id}")]
+#[delete("/api/apps/{id}")]
 #[tracing::instrument]
 async fn delete_project(
     auth: OwnerRole,
@@ -185,7 +185,7 @@ async fn delete_project(
         ("api_key" = [])
     )
 )]
-#[patch("/apps/{id}/env")]
+#[patch("/api/apps/{id}/env")]
 #[tracing::instrument]
 async fn upsert_env(
     auth: OwnerRole,
@@ -210,7 +210,7 @@ async fn upsert_env(
         ("api_key" = [])
     )
 )]
-#[delete("/apps/{id}/env/{name}")]
+#[delete("/api/apps/{id}/env/{name}")]
 #[tracing::instrument]
 async fn delete_env(
     auth: OwnerRole,

@@ -1,4 +1,5 @@
 use actix_web::web::{Data, ServiceConfig};
+use endpoints::{apps, deployments, system, version};
 use octocrab::models::Repository as CrabRepository;
 use serde::Serialize;
 use utoipa::{OpenApi, ToSchema};
@@ -14,11 +15,9 @@ use crate::{
     sqlite_db::SqliteDbSetup,
 };
 
-mod apps;
 mod bearer;
-mod deployments;
+mod endpoints;
 pub(crate) mod server;
-mod system;
 mod utils;
 
 pub(crate) const API_PORT: u16 = 5045;
@@ -27,10 +26,9 @@ pub(crate) const API_PORT: u16 = 5045;
 #[derive(OpenApi)]
 #[openapi(
     paths(
-        system::health,
-        system::get_system_version,
-        system::get_system_logs,
-        system::update_version,
+        version::get_version,
+        version::update_version,
+        system::get_logs,
         apps::get_projects,
         apps::get_project,
         apps::create_project,
@@ -55,10 +53,9 @@ fn configure_service(store: Data<AppState>) -> impl FnOnce(&mut ServiceConfig) {
     |config: &mut ServiceConfig| {
         config
             .app_data(store)
-            .service(system::health)
-            .service(system::get_system_version)
-            .service(system::get_system_logs)
-            .service(system::update_version)
+            .service(version::get_version)
+            .service(version::update_version)
+            .service(system::get_logs)
             .service(apps::get_projects)
             .service(apps::get_project)
             .service(apps::create_project)

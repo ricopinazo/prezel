@@ -7,21 +7,10 @@ use tracing::error;
 use crate::{
     api::bearer::{AnyRole, OwnerRole},
     docker::{
-        create_container_with_explicit_binds, get_container_execution_logs, get_image_id,
-        get_prezel_image_version, pull_image, run_container,
+        create_container_with_explicit_binds, get_image_id, get_prezel_image_version, pull_image,
+        run_container,
     },
 };
-
-/// Hello world
-#[utoipa::path(
-    responses(
-        (status = 200, description = "Said hi to the world", body = &str)
-    )
-)]
-#[get("/health")]
-async fn health() -> impl Responder {
-    HttpResponse::Ok().json("Healthy")
-}
 
 /// Get system version
 #[utoipa::path(
@@ -33,27 +22,12 @@ async fn health() -> impl Responder {
         ("api_key" = [])
     )
 )]
-#[get("/system/version")]
-async fn get_system_version(_auth: AnyRole) -> impl Responder {
+#[get("/version")]
+async fn get_version(_auth: AnyRole) -> impl Responder {
     match get_prezel_image_version().await {
         Some(version) => HttpResponse::Ok().json(version),
         None => HttpResponse::InternalServerError().json("internal server error"),
     }
-}
-
-/// Get system logs
-#[utoipa::path(
-    responses(
-        (status = 200, description = "Fetched system logs", body = [Log])
-    ),
-    security(
-        ("api_key" = [])
-    )
-)]
-#[get("/system/logs")]
-async fn get_system_logs(_auth: AnyRole) -> impl Responder {
-    let logs = get_container_execution_logs("prezel").await;
-    HttpResponse::Ok().json(logs.collect::<Vec<_>>())
 }
 
 /// Update version
@@ -67,7 +41,7 @@ async fn get_system_logs(_auth: AnyRole) -> impl Responder {
         ("api_key" = [])
     )
 )]
-#[post("/system/update")]
+#[post("/version")]
 async fn update_version(_auth: OwnerRole, version: Json<String>) -> impl Responder {
     dbg!();
     match run_update_container(&version.0).await {

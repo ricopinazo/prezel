@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use futures::{stream, StreamExt};
-use tokio::sync::{RwLock, RwLockReadGuard};
+use tokio::sync::RwLock;
 
 use crate::{
     container::Container, db::Db, github::Github, label::Label, sqlite_db::SqliteDbSetup,
