@@ -150,16 +150,10 @@ impl Manager {
     }
 
     #[tracing::instrument]
-    pub(crate) async fn get_prod_deployment(
-        &self,
-        project: i64,
-    ) -> Option<RwLockReadGuard<Deployment>> {
+    pub(crate) async fn get_prod_deployment(&self, project: i64) -> Option<Deployment> {
         let map = self.deployments.read().await;
-        RwLockReadGuard::try_map(map, |map| {
-            let prod_id = map.prod.get(&project)?;
-            map.deployments.get(&(project, prod_id.to_owned()))
-        })
-        .ok()
+        let prod_id = map.prod.get(&project)?;
+        map.deployments.get(&(project, prod_id.to_owned())).cloned()
     }
 
     #[tracing::instrument]

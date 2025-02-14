@@ -23,7 +23,7 @@ pub(super) async fn get_prod_deployment(
     let is_prod = true;
     Some(
         ApiDeployment::from(
-            Some(deployment).as_deref(),
+            Some(deployment).as_ref(),
             &db_deployment,
             is_prod,
             box_domain,
