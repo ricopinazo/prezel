@@ -19,7 +19,7 @@ pub(crate) struct NanoId(String);
 
 impl NanoId {
     fn random() -> Self {
-        Self(nanoid!())
+        Self(uuid::Uuid::new_v4().to_string())
     }
 
     pub(crate) fn as_str(&self) -> &str {
