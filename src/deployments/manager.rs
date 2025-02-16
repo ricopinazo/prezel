@@ -141,7 +141,7 @@ impl Manager {
     }
 
     #[tracing::instrument]
-    pub(crate) async fn get_deployment(&self, id: i64) -> Option<Deployment> {
+    pub(crate) async fn get_deployment(&self, id: &str) -> Option<Deployment> {
         let map = self.deployments.read().await;
         map.deployments
             .values()
@@ -150,7 +150,7 @@ impl Manager {
     }
 
     #[tracing::instrument]
-    pub(crate) async fn get_prod_deployment(&self, project: i64) -> Option<Deployment> {
+    pub(crate) async fn get_prod_deployment(&self, project: &str) -> Option<Deployment> {
         let map = self.deployments.read().await;
         let prod_id = map.prod.get(&project)?;
         map.deployments.get(&(project, prod_id.to_owned())).cloned()

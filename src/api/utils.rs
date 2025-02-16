@@ -36,7 +36,7 @@ pub(super) async fn get_prod_deployment(
 #[tracing::instrument]
 pub(super) async fn get_all_deployments(
     AppState { db, manager, .. }: &AppState,
-    project: i64,
+    project: &str,
 ) -> Vec<ApiDeployment> {
     let box_domain = &manager.box_domain;
 
@@ -68,7 +68,7 @@ pub(super) async fn get_all_deployments(
 
 pub(crate) async fn clone_deployment(db: &Db, deployment_id: i64) -> Option<()> {
     let deployment = db.get_deployment(deployment_id).await?;
-    let project = db.get_project(deployment.project).await?;
+    let project = db.get_project(&deployment.project).await?;
 
     let insert = InsertDeployment {
         env: project.env.clone(),
