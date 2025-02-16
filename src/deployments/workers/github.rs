@@ -36,7 +36,7 @@ impl Worker for GithubWorker {
                                 timestamp: commit.timestamp,
                                 branch: default_branch,
                                 default_branch: 1, // TODO: abstract this as a bool
-                                project: id,
+                                project: id.clone(),
                             };
                             add_deployment_to_db_if_missing(&self.db, deployment).await;
                         }
@@ -62,7 +62,7 @@ impl Worker for GithubWorker {
                                     timestamp: commit.timestamp,
                                     branch,
                                     default_branch: 0, // TODO: abstract this as a bool
-                                    project: id,
+                                    project: id.clone(),
                                 };
                                 add_deployment_to_db_if_missing(&self.db, deployment).await;
                             }
@@ -87,7 +87,7 @@ async fn get_default_branch_and_latest_commit(
 #[tracing::instrument]
 async fn add_deployment_to_db_if_missing(db: &Db, deployment: InsertDeployment) {
     if !db
-        .hash_exists_for_project(&deployment.sha, deployment.project)
+        .hash_exists_for_project(&deployment.sha, &deployment.project)
         .await
     {
         db.insert_deployment(deployment).await

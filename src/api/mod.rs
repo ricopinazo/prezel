@@ -152,7 +152,7 @@ impl LibsqlDb {
 #[derive(Serialize, ToSchema)]
 #[schema(title = "Deployment")]
 struct ApiDeployment {
-    id: i64,
+    id: String,
     url_id: String,
     // project: Project, // TODO: review why I needed this
     sha: String,
@@ -200,7 +200,7 @@ impl ApiDeployment {
                 let app_container = deployment.app_container.get_container_id().await;
 
                 let libsql_db = if is_prod {
-                    let prod_db = manager.get_prod_db(deployment.project).await;
+                    let prod_db = manager.get_prod_db(&deployment.project).await;
                     prod_db.map(|setup| LibsqlDb::new(setup, None, box_domain, project_name))
                 } else {
                     let branch_db = container_status.get_db_setup();
@@ -227,7 +227,7 @@ impl ApiDeployment {
         // TODO: I should have a nested struct for the container related
         // info so it can be an option as a whole
         Self {
-            id: db_deployment.id,
+            id: db_deployment.id.to_string(),
             url_id: db_deployment.url_id.clone(),
             // project: value.deployment.project.clone(),// TODO: review why I needed this
             sha: db_deployment.sha.clone(),
@@ -291,24 +291,24 @@ impl From<CrabRepository> for Repository {
 #[derive(Serialize, ToSchema)]
 struct ProjectInfo {
     name: String,
-    id: i64,
+    id: String,
     repo: Repository,
     created: i64,
     env: Vec<EditedEnvVar>,
     custom_domains: Vec<String>,
-    prod_deployment_id: Option<i64>,
+    prod_deployment_id: Option<String>,
     prod_deployment: Option<ApiDeployment>,
 }
 
 #[derive(Serialize, ToSchema)]
 struct FullProjectInfo {
     name: String,
-    id: i64,
+    id: String,
     repo: Repository,
     created: i64,
     env: Vec<EditedEnvVar>,
     custom_domains: Vec<String>,
-    prod_deployment_id: Option<i64>,
+    prod_deployment_id: Option<String>,
     prod_deployment: Option<ApiDeployment>,
     /// All project deployments sorted by created datetime descending
     deployments: Vec<ApiDeployment>,

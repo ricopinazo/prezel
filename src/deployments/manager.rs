@@ -4,7 +4,11 @@ use futures::{stream, StreamExt};
 use tokio::sync::RwLock;
 
 use crate::{
-    container::Container, db::Db, github::Github, label::Label, sqlite_db::SqliteDbSetup,
+    container::Container,
+    db::{Db, NanoId},
+    github::Github,
+    label::Label,
+    sqlite_db::SqliteDbSetup,
     tls::CertificateStore,
 };
 
@@ -141,30 +145,32 @@ impl Manager {
     }
 
     #[tracing::instrument]
-    pub(crate) async fn get_deployment(&self, id: &str) -> Option<Deployment> {
+    pub(crate) async fn get_deployment(&self, id: &NanoId) -> Option<Deployment> {
         let map = self.deployments.read().await;
         map.deployments
             .values()
-            .find(|deployment| deployment.id == id)
+            .find(|deployment| &deployment.id == id)
             .cloned()
     }
 
     #[tracing::instrument]
-    pub(crate) async fn get_prod_deployment(&self, project: &str) -> Option<Deployment> {
+    pub(crate) async fn get_prod_deployment(&self, project: &NanoId) -> Option<Deployment> {
         let map = self.deployments.read().await;
-        let prod_id = map.prod.get(&project)?;
-        map.deployments.get(&(project, prod_id.to_owned())).cloned()
+        let prod_id = map.prod.get(project)?;
+        map.deployments
+            .get(&(project.clone(), prod_id.to_owned()))
+            .cloned()
     }
 
     #[tracing::instrument]
-    pub(crate) async fn get_prod_db(&self, project: i64) -> Option<SqliteDbSetup> {
+    pub(crate) async fn get_prod_db(&self, project: &NanoId) -> Option<SqliteDbSetup> {
         self.deployments.read().await.get_prod_db(project)
     }
 
     #[tracing::instrument]
-    pub(crate) async fn get_prod_url_id(&self, project: i64) -> Option<String> {
+    pub(crate) async fn get_prod_url_id(&self, project: &NanoId) -> Option<String> {
         let map = self.deployments.read().await;
-        Some(map.prod.get(&project)?.to_owned())
+        Some(map.prod.get(project)?.to_owned())
     }
 
     #[tracing::instrument]

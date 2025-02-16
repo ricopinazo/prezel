@@ -19,6 +19,7 @@ use url::Url;
 
 use crate::api::API_PORT;
 use crate::conf::Conf;
+use crate::db::NanoId;
 use crate::deployments::manager::Manager;
 use crate::listener::{Access, Listener};
 use crate::logging::{Level, RequestLog, RequestLogger};
@@ -41,7 +42,7 @@ impl Listener for ApiListener {
 
 struct Peer {
     listener: Box<dyn Listener>,
-    deployment_id: Option<i64>,
+    deployment_id: Option<NanoId>,
 }
 
 impl<L: Listener + 'static> From<L> for Peer {
@@ -102,7 +103,7 @@ impl ProxyApp {
 
 #[derive(Default)]
 struct RequestCtx {
-    deployment: Option<i64>,
+    deployment: Option<NanoId>,
     socket: Option<SocketAddrV4>,
 }
 
@@ -222,7 +223,7 @@ fn logging(session: &Session, ctx: &RequestCtx, logger: &RequestLogger) -> Optio
     let host = session.get_header(header::HOST)?.to_str().ok()?.to_owned();
     let path = session.req_header().uri.path().to_owned();
     let method = session.req_header().method.as_str().to_owned();
-    let deployment = ctx.deployment?; // I could also add a header to the incoming request X-Prezel-Request-Id to identify the deployment
+    let deployment = ctx.deployment.clone()?; // I could also add a header to the incoming request X-Prezel-Request-Id to identify the deployment
     let response = session.response_written()?;
 
     let level = if response.status.is_client_error() || response.status.is_server_error() {

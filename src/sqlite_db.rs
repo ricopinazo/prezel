@@ -10,6 +10,7 @@ use serde::Serialize;
 
 use crate::{
     container::{sqld::SqldContainer, Container},
+    db::NanoId,
     deployments::worker::WorkerHandle,
     paths::HostFile,
 };
@@ -24,8 +25,8 @@ pub(crate) struct ProdSqliteDb {
 impl ProdSqliteDb {
     // TODO: build_queue is needed in case the container needs to trigger its own build because
     // someone is trying to access it. But this never happens for sqld containers...
-    pub(crate) fn new(project_id: i64, build_queue: WorkerHandle) -> anyhow::Result<Self> {
-        let project_folder = Path::new("sqlite").join(project_id.to_string());
+    pub(crate) fn new(project_id: &NanoId, build_queue: WorkerHandle) -> anyhow::Result<Self> {
+        let project_folder = Path::new("sqlite").join(project_id.as_str());
         let file = HostFile::new(project_folder.clone(), "main.db");
 
         let main_db_path = file.get_container_file();
@@ -47,8 +48,8 @@ impl ProdSqliteDb {
         })
     }
 
-    pub(crate) fn branch(&self, deployment_id: i64) -> BranchSqliteDb {
-        let path = self.project_folder.join(deployment_id.to_string());
+    pub(crate) fn branch(&self, deployment_id: &NanoId) -> BranchSqliteDb {
+        let path = self.project_folder.join(deployment_id.as_str());
         let branch_file = HostFile::new(path, "preview.db");
         BranchSqliteDb {
             base_file: self.setup.file.clone(),

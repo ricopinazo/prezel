@@ -11,7 +11,7 @@ use crate::{
         utils::{get_all_deployments, get_prod_deployment, get_prod_deployment_id},
         AppState, ErrorResponse, FullProjectInfo, ProjectInfo,
     },
-    db::{EnvVar, InsertProject, UpdateProject},
+    db::{EnvVar, InsertProject, IntoOptString, UpdateProject},
     tokens::TokenClaims,
 };
 
@@ -31,7 +31,7 @@ async fn get_projects(auth: AnyRole, state: Data<AppState>) -> impl Responder {
     let projects_with_deployments = projects.into_iter().map(|project| {
         let state = state.clone();
         async move {
-            let prod_deployment = get_prod_deployment(&state, project.id).await;
+            let prod_deployment = get_prod_deployment(&state, &project.id).await;
             let prod_deployment_id = get_prod_deployment_id(&state.db, &project).await;
 
             // TODO: if the repo is not available, simply don't return that info
@@ -43,12 +43,12 @@ async fn get_projects(auth: AnyRole, state: Data<AppState>) -> impl Responder {
                 .unwrap();
             ProjectInfo {
                 name: project.name.clone(),
-                id: project.id,
+                id: project.id.to_string(),
                 repo: repo.into(),
                 created: project.created,
                 env: project.env,
                 custom_domains: project.custom_domains,
-                prod_deployment_id,
+                prod_deployment_id: prod_deployment_id.into_opt_string(),
                 prod_deployment,
             }
         }
@@ -82,17 +82,17 @@ async fn get_project(auth: AnyRole, state: Data<AppState>, name: Path<String>) -
                 .unwrap();
 
             let prod_deployment_id = get_prod_deployment_id(&state.db, &project).await;
-            let prod_deployment = get_prod_deployment(&state, project.id).await;
-            let deployments = get_all_deployments(&state, project.id).await;
+            let prod_deployment = get_prod_deployment(&state, &project.id).await;
+            let deployments = get_all_deployments(&state, &project.id).await;
 
             HttpResponse::Ok().json(FullProjectInfo {
                 name: project.name,
-                id: project.id,
+                id: project.id.into(),
                 repo: repo.into(),
                 created: project.created,
                 env: project.env,
                 custom_domains: project.custom_domains,
-                prod_deployment_id,
+                prod_deployment_id: prod_deployment_id.into_opt_string(),
                 prod_deployment,
                 deployments,
             })
@@ -145,9 +145,10 @@ async fn update_project(
     auth: OwnerRole,
     project: Json<UpdateProject>,
     state: Data<AppState>,
-    id: Path<i64>,
+    id: Path<String>,
 ) -> impl Responder {
-    state.db.update_project(id.into_inner(), project.0).await;
+    let id = id.into_inner().into();
+    state.db.update_project(&id, project.0).await;
     state.manager.sync_with_db().await; // TODO: review if its fine not doing a full sync with github here
     HttpResponse::Ok()
 }
@@ -167,10 +168,10 @@ async fn delete_project(
     auth: OwnerRole,
     req: HttpRequest,
     state: Data<AppState>,
-    id: Path<i64>,
+    id: Path<String>,
 ) -> impl Responder {
     req.extensions().get::<TokenClaims>();
-    state.db.delete_project(id.into_inner()).await;
+    state.db.delete_project(&id.into_inner().into()).await;
     state.manager.sync_with_db().await;
     HttpResponse::Ok()
 }
@@ -191,12 +192,10 @@ async fn upsert_env(
     auth: OwnerRole,
     env: Json<EnvVar>,
     state: Data<AppState>,
-    id: Path<i64>,
+    id: Path<String>,
 ) -> impl Responder {
-    state
-        .db
-        .upsert_env(id.into_inner(), &env.0.name, &env.0.value)
-        .await;
+    let id = id.into_inner().into();
+    state.db.upsert_env(&id, &env.0.name, &env.0.value).await;
     // state.manager.sync_with_db().await; // TODO: review if its fine not calling sync here
     HttpResponse::Ok()
 }
@@ -215,9 +214,9 @@ async fn upsert_env(
 async fn delete_env(
     auth: OwnerRole,
     state: Data<AppState>,
-    path: Path<(i64, String)>,
+    path: Path<(String, String)>,
 ) -> impl Responder {
-    state.db.delete_env(path.0, &path.1).await;
+    state.db.delete_env(&(path.0.clone().into()), &path.1).await;
     // state.manager.sync_with_db().await; // TODO: review if its fine not calling sync here
     HttpResponse::Ok()
 }

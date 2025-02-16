@@ -13,13 +13,23 @@ use crate::{
     time::{self, now},
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, sqlx::Type)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, sqlx::Type, Serialize, Deserialize)]
 #[sqlx(transparent)]
-struct NanoId(String);
+pub(crate) struct NanoId(String);
 
 impl NanoId {
     fn random() -> Self {
         Self(nanoid!())
+    }
+
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl ToString for NanoId {
+    fn to_string(&self) -> String {
+        self.0.to_string()
     }
 }
 
@@ -29,8 +39,29 @@ impl From<String> for NanoId {
     }
 }
 
-struct WithId {
-    id: NanoId,
+impl From<NanoId> for String {
+    fn from(value: NanoId) -> Self {
+        value.0
+    }
+}
+
+#[derive(Debug, Clone)]
+struct MaybeNanoId(Option<NanoId>);
+
+impl From<Option<String>> for MaybeNanoId {
+    fn from(value: Option<String>) -> Self {
+        Self(value.map(|id| id.into()))
+    }
+}
+
+pub(crate) trait IntoOptString {
+    fn into_opt_string(self) -> Option<String>;
+}
+
+impl IntoOptString for Option<NanoId> {
+    fn into_opt_string(self) -> Option<String> {
+        self.map(|id| id.into())
+    }
 }
 
 #[derive(sqlx::Type, PartialEq, Clone, Copy, Debug)]
@@ -47,7 +78,7 @@ struct PlainProject {
     pub(crate) repo_id: i64,
     pub(crate) created: i64,
     pub(crate) root: String,
-    pub(crate) prod_id: Option<i64>,
+    pub(crate) prod_id: MaybeNanoId,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, ToSchema)]
@@ -71,7 +102,7 @@ pub(crate) struct Project {
     pub(crate) created: i64,
     pub(crate) env: Vec<EditedEnvVar>,
     pub(crate) root: String,
-    pub(crate) prod_id: Option<i64>,
+    pub(crate) prod_id: Option<NanoId>,
     pub(crate) custom_domains: Vec<String>,
 }
 
@@ -92,7 +123,7 @@ pub(crate) struct UpdateProject {
 #[derive(FromRow, Debug)]
 struct PlainDeployment {
     pub(crate) id: NanoId,
-    pub(crate) url_id: String,
+    pub(crate) slug: String,
     pub(crate) timestamp: i64,
     pub(crate) created: i64,
     pub(crate) sha: String,
@@ -132,7 +163,7 @@ pub(crate) struct BuildLog {
     pub(crate) content: String,
     pub(crate) timestamp: i64,
     pub(crate) error: i64,
-    pub(crate) deployment: String,
+    pub(crate) deployment: NanoId,
 }
 
 #[derive(Debug)]
@@ -156,7 +187,7 @@ pub(crate) struct InsertDeployment {
     pub(crate) timestamp: i64,
     pub(crate) branch: String,
     pub(crate) default_branch: i64,
-    pub(crate) project: String,
+    pub(crate) project: NanoId,
 }
 
 fn create_deployment_url_id() -> String {
@@ -260,7 +291,7 @@ impl Db {
             created: project.created,
             env,
             root: project.root,
-            prod_id: project.prod_id,
+            prod_id: project.prod_id.0,
             custom_domains,
         }
     }
@@ -381,7 +412,7 @@ impl Db {
     pub(crate) async fn get_deployment(&self, deployment: &NanoId) -> Option<Deployment> {
         let plain_deployment = sqlx::query_as!(
             PlainDeployment,
-            r#"select id, url_id, timestamp, created, sha, branch, default_branch, result as "result: BuildResult", build_started, build_finished,project from deployments where deployments.id = ?"#,
+            r#"select id, slug, timestamp, created, sha, branch, default_branch, result as "result: BuildResult", build_started, build_finished,project from deployments where deployments.id = ?"#,
             deployment
         )
         .fetch_optional(&self.conn)
@@ -396,7 +427,7 @@ impl Db {
     pub(crate) async fn get_deployments(&self) -> Vec<Deployment> {
         let deployments = sqlx::query_as!(
             PlainDeployment,
-            r#"select id, url_id, timestamp, created, sha, branch, default_branch, result as "result: BuildResult", build_started, build_finished, project from deployments"#
+            r#"select id, slug, timestamp, created, sha, branch, default_branch, result as "result: BuildResult", build_started, build_finished, project from deployments"#
         )
         .fetch_all(&self.conn)
         .await
@@ -421,7 +452,7 @@ impl Db {
 
         Deployment {
             id: deployment.id,
-            url_id: deployment.url_id,
+            url_id: deployment.slug,
             timestamp: deployment.timestamp,
             created: deployment.created,
             sha: deployment.sha,
@@ -498,7 +529,7 @@ impl Db {
         let id = NanoId::random();
         let url_id = create_deployment_url_id();
         sqlx::query!(
-            "insert into deployments (id, url_id, timestamp, created, sha, branch, default_branch, project) values (?, ?, ?, ?, ?, ?, ?, ?)",
+            "insert into deployments (id, slug, timestamp, created, sha, branch, default_branch, project) values (?, ?, ?, ?, ?, ?, ?, ?)",
             id,
             url_id,
             deployment.timestamp,

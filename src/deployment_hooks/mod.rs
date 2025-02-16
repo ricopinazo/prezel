@@ -3,7 +3,7 @@ use std::fmt;
 use async_trait::async_trait;
 
 use crate::{
-    db::{BuildResult, Db},
+    db::{BuildResult, Db, NanoId},
     time::now,
 };
 
@@ -20,11 +20,11 @@ pub(crate) trait DeploymentHooks: 'static + Send + Sync + fmt::Debug {
 #[derive(Debug)]
 pub(crate) struct StatusHooks {
     db: Db,
-    id: i64,
+    id: NanoId,
 }
 
 impl StatusHooks {
-    pub(crate) fn new(db: Db, deployment_id: i64) -> Self {
+    pub(crate) fn new(db: Db, deployment_id: NanoId) -> Self {
         Self {
             db,
             id: deployment_id,
@@ -37,27 +37,27 @@ impl StatusHooks {
 impl DeploymentHooks for StatusHooks {
     async fn on_build_log(&self, output: &str, error: bool) {
         self.db
-            .insert_deployment_build_log(self.id, output, error) // TODO: differentiate error logs
+            .insert_deployment_build_log(&self.id, output, error) // TODO: differentiate error logs
             .await;
     }
 
     async fn on_build_started(&self) {
-        self.db.clear_deployment_build_logs(self.id).await;
-        self.db.update_deployment_build_start(self.id, now()).await;
-        self.db.reset_deployment_build_end(self.id).await;
+        self.db.clear_deployment_build_logs(&self.id).await;
+        self.db.update_deployment_build_start(&self.id, now()).await;
+        self.db.reset_deployment_build_end(&self.id).await;
     }
 
     async fn on_build_finished(&self) {
-        self.db.update_deployment_build_end(self.id, now()).await;
+        self.db.update_deployment_build_end(&self.id, now()).await;
         self.db
-            .update_deployment_result(self.id, BuildResult::Built) // FIXME: the db should maybe only have a flag error: bool
+            .update_deployment_result(&self.id, BuildResult::Built) // FIXME: the db should maybe only have a flag error: bool
             .await
     }
 
     async fn on_build_failed(&self) {
-        self.db.update_deployment_build_end(self.id, now()).await;
+        self.db.update_deployment_build_end(&self.id, now()).await;
         self.db
-            .update_deployment_result(self.id, BuildResult::Failed)
+            .update_deployment_result(&self.id, BuildResult::Failed)
             .await
     }
 }

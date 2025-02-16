@@ -26,8 +26,12 @@ use crate::{
 )]
 #[post("/api/deployments/redeploy")]
 #[tracing::instrument]
-async fn redeploy(auth: OwnerRole, deployment: Json<i64>, state: Data<AppState>) -> impl Responder {
-    clone_deployment(&state.db, deployment.0).await;
+async fn redeploy(
+    auth: OwnerRole,
+    deployment: Json<String>,
+    state: Data<AppState>,
+) -> impl Responder {
+    clone_deployment(&state.db, &deployment.0.into()).await;
     state.manager.sync_with_db().await;
     HttpResponse::Ok()
 }
@@ -46,9 +50,9 @@ async fn redeploy(auth: OwnerRole, deployment: Json<i64>, state: Data<AppState>)
 async fn delete_deployment(
     auth: OwnerRole,
     state: Data<AppState>,
-    id: Path<i64>,
+    id: Path<String>,
 ) -> impl Responder {
-    state.db.delete_deployment(id.into_inner()).await;
+    state.db.delete_deployment(&id.into_inner().into()).await;
     state.manager.sync_with_db().await;
     HttpResponse::Ok()
 }
@@ -85,10 +89,10 @@ async fn sync(auth: OwnerRole, state: Data<AppState>) -> impl Responder {
 async fn get_deployment_logs(
     auth: AnyRole,
     state: Data<AppState>,
-    id: Path<i64>,
+    id: Path<String>,
 ) -> impl Responder {
-    let id = id.into_inner();
-    let app_container = match state.manager.get_deployment(id).await {
+    let id = id.into_inner().into();
+    let app_container = match state.manager.get_deployment(&id).await {
         Some(deployment) => deployment.app_container,
         None => return HttpResponse::NotFound().json("not found"),
     };
@@ -96,7 +100,7 @@ async fn get_deployment_logs(
     let container_logs = app_container
         .get_logs()
         .await
-        .map(|log| Log::from_docker(log, id));
+        .map(|log| Log::from_docker(log, id.clone()));
 
     match read_request_event_logs() {
         Ok(logs) => {
@@ -127,12 +131,12 @@ async fn get_deployment_logs(
 async fn get_deployment_build_logs(
     auth: OwnerRole,
     state: Data<AppState>,
-    id: Path<i64>,
+    id: Path<String>,
 ) -> impl Responder {
-    let id = id.into_inner();
+    let id = id.into_inner().into();
     let logs: Vec<Log> = state
         .db
-        .get_deployment_build_logs(id)
+        .get_deployment_build_logs(&id)
         .await
         .into_iter()
         .map(|log| log.into())

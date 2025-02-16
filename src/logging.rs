@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::{
-    db::BuildLog,
+    db::{BuildLog, NanoId},
     docker::{DockerLog, LogType},
     paths::get_instance_log_dir,
 };
@@ -32,7 +32,7 @@ pub(crate) enum Level {
 pub(crate) struct RequestLog {
     pub(crate) time: i64,
     pub(crate) level: Level,
-    pub(crate) deployment: i64,
+    pub(crate) deployment: NanoId,
     pub(crate) host: String,
     pub(crate) method: String, // TODO: make enum out of this?
     pub(crate) path: String,
@@ -44,7 +44,7 @@ pub(crate) struct RequestLog {
 pub(crate) struct Log {
     pub(crate) time: i64,
     pub(crate) level: Level,
-    pub(crate) deployment: i64,
+    pub(crate) deployment: NanoId,
     pub(crate) host: Option<String>,
     pub(crate) method: Option<String>, // TODO: make enum out of this?
     pub(crate) path: Option<String>,
@@ -53,7 +53,7 @@ pub(crate) struct Log {
 }
 
 impl Log {
-    pub(crate) fn from_docker(value: DockerLog, deployment: i64) -> Self {
+    pub(crate) fn from_docker(value: DockerLog, deployment: NanoId) -> Self {
         // TODO: try also inferring the level from the log itself
         let level = if value.log_type == LogType::Out {
             Level::INFO

@@ -11,6 +11,7 @@ use tempfile::TempDir;
 use tokio::fs;
 
 use crate::{
+    db::NanoId,
     deployment_hooks::StatusHooks,
     docker::{get_managed_image_id, ImageName},
     env::EnvVars,
@@ -28,7 +29,7 @@ const DB_PATH_ENV_NAME: &str = "PREZEL_DB_URL";
 #[derive(Clone, Debug)]
 pub(crate) struct CommitContainer {
     github: Github,
-    deployment: i64,
+    deployment: NanoId,
     // main_db_file: HostFile,
     branch_db: Option<BranchSqliteDb>,
     pub(crate) repo_id: i64,
@@ -44,7 +45,7 @@ impl CommitContainer {
         github: Github,
         repo_id: i64,
         sha: String,
-        deployment: i64,
+        deployment: NanoId,
         env: EnvVars, // TODO: this is duplicated in ContainerConfig...
         root: String,
         branch: bool,
@@ -55,7 +56,7 @@ impl CommitContainer {
         result: Option<BuildResult>,
     ) -> Container {
         let (db_file, branch_db) = if branch {
-            let branch_db = prod_db.branch(deployment);
+            let branch_db = prod_db.branch(&deployment);
             (branch_db.branch_file.clone(), Some(branch_db))
         } else {
             (prod_db.setup.file.clone(), None)
@@ -76,7 +77,7 @@ impl CommitContainer {
         let builder = Self {
             github,
             branch_db,
-            deployment,
+            deployment: deployment.clone(),
             repo_id,
             sha,
             env: extended_env.clone(),

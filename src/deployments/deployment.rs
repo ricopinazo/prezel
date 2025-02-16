@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 use crate::container::commit::CommitContainer;
 use crate::container::ContainerStatus;
-use crate::db::{BuildResult, Deployment as DbDeployment};
+use crate::db::{BuildResult, Deployment as DbDeployment, NanoId};
 use crate::deployment_hooks::StatusHooks;
 use crate::label::Label;
 use crate::sqlite_db::ProdSqliteDb;
@@ -25,8 +25,8 @@ pub(crate) struct Deployment {
     pub(crate) branch: String,
     pub(crate) default_branch: bool,
     pub(crate) sha: String,
-    pub(crate) id: i64,
-    pub(crate) project: i64,
+    pub(crate) id: NanoId,
+    pub(crate) project: NanoId,
     pub(crate) url_id: String,
     pub(crate) timestamp: i64,
     pub(crate) created: i64,
@@ -116,7 +116,7 @@ impl Deployment {
         };
 
         let env = env.into();
-        let hooks = StatusHooks::new(db, id);
+        let hooks = StatusHooks::new(db, id.clone());
 
         let (inistial_status, build_result) = match deployment.result {
             Some(BuildResult::Failed) => (ContainerStatus::Failed, Some(BuildResult::Failed)),
@@ -136,7 +136,7 @@ impl Deployment {
             github,
             project.repo_id,
             sha.clone(),
-            id,
+            id.clone(),
             env,
             project.root.clone(),
             is_branch_deployment,
@@ -146,16 +146,20 @@ impl Deployment {
             build_result,
         );
 
+        let forced_prod = project
+            .prod_id
+            .as_ref()
+            .is_some_and(|prod_id| &id == prod_id);
         Self {
             branch,
             default_branch,
             sha,
             id,
-            project: project.id,
+            project: project.id.clone(),
             url_id,
             timestamp,
             created,
-            forced_prod: project.prod_id.is_some_and(|prod_id| id == prod_id),
+            forced_prod,
             app_container: commit_container.into(),
         }
     }

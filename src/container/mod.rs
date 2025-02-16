@@ -14,7 +14,7 @@ use tracing::error;
 
 use crate::{
     api::Status,
-    db::BuildResult,
+    db::{BuildResult, NanoId},
     deployment_hooks::DeploymentHooks,
     deployments::worker::WorkerHandle,
     docker::{
@@ -132,7 +132,7 @@ pub(crate) struct Container {
     setup: Box<dyn ContainerSetup>,
     config: ContainerConfig,
     hooks: Box<dyn DeploymentHooks>,
-    pub(crate) logging_deployment_id: Option<i64>,
+    pub(crate) logging_deployment_id: Option<NanoId>,
     pub(crate) public: bool,
     build_queue: WorkerHandle,
 }
@@ -144,7 +144,7 @@ impl Container {
         setup: impl ContainerSetup,
         config: ContainerConfig,
         build_queue: WorkerHandle,
-        logging_deployment_id: Option<i64>,
+        logging_deployment_id: Option<NanoId>,
         public: bool,
         hooks: impl DeploymentHooks,
     ) -> Self {
