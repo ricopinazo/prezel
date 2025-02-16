@@ -1,8 +1,10 @@
 use std::future::Future;
+use std::path::{Component, Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 
 use futures::{stream, Stream, StreamExt};
+use serde::Deserialize;
 
 use crate::container::commit::CommitContainer;
 use crate::container::ContainerStatus;
@@ -32,21 +34,57 @@ pub(crate) struct Deployment {
     pub(crate) app_container: Arc<Container>, // FIXME: try to remove Arc, only needed to make access to socket/public generic
 }
 
-impl Deployment {
-    // async fn get_all_containers(&self) -> impl Iterator<Item = &Container> {
+#[derive(Deserialize)]
+enum Visibility {
+    standard,
+    public,
+    private,
+}
 
-    //     self.app_container.status.read().await.get_db_container();
+#[derive(Deserialize, Default)]
+struct DeploymentConfig {
+    visibility: Option<Visibility>,
+}
 
-    //     [self.app_container.as_ref(), self.prisma_container.as_ref()].into_iter()
+impl DeploymentConfig {
+    // FIXME: if there's just a network problem, I might interpret as there is no file
+    // and make the prod deployment public when it was indeed set to private in the repo
+    async fn fetch_from_repo(github: &Github, repo_id: i64, sha: &str, root: &str) -> Option<Self> {
+        let conf_path = PathBuf::from(root).join("prezel.json");
+        let valid_components = conf_path
+            .components()
+            .filter(|comp| !matches!(comp, Component::CurDir));
+        let valid_path: PathBuf = valid_components.collect();
+        let content = github
+            .download_file(repo_id, &sha, valid_path.to_str()?)
+            .await
+            .ok()?;
+        serde_json::from_str(&content).ok()
+    }
+
+    fn get_visibility(&self) -> Visibility {
+        self.visibility.unwrap_or(Visibility::standard)
+    }
+
+    // fn get_visibility_for_prod_deployment(&self) {
+    //     match self.visibility.unwrap_or(Visibility::standard) {
+    //         Visibility::standard => true,
+    //         Visibility::public => true,
+    //         Visibility::private => false,
+    //     }
     // }
 
-    // TODO:  try to merge this with the one above?
-    pub(crate) fn iter_arc_containers(&self) -> impl Stream<Item = Arc<Container>> + Send + '_ {
-        // let db_container = self.app_container.status.read().await.get_db_container();
-        // [Some(self.app_container.clone()), db_container]
-        //     .into_iter()
-        //     .filter_map(|container| container)
+    // fn get_visibility_for_preview_deployment(&self) {
+    //     match self.visibility.unwrap_or(Visibility::standard) {
+    //         Visibility::standard => false,
+    //         Visibility::public => true,
+    //         Visibility::private => false,
+    //     }
+    // }
+}
 
+impl Deployment {
+    pub(crate) fn iter_arc_containers(&self) -> impl Stream<Item = Arc<Container>> + Send + '_ {
         let containers: [Pin<Box<dyn Future<Output = Option<Arc<Container>>> + Send>>; 2] = [
             Box::pin(async { Some(self.app_container.clone()) }),
             Box::pin(async {
@@ -61,7 +99,7 @@ impl Deployment {
         stream::iter(containers).filter_map(|container| container)
     }
 
-    pub(crate) fn new(
+    pub(crate) async fn new(
         deployment: DeploymentWithProject,
         build_queue: WorkerHandle,
         github: Github,
@@ -84,6 +122,15 @@ impl Deployment {
             ..
         } = deployment;
 
+        let conf = DeploymentConfig::fetch_from_repo(&github, project.repo_id, &sha, &project.root)
+            .await
+            .unwrap_or_default();
+        let is_public = match conf.get_visibility() {
+            Visibility::standard => default_branch,
+            Visibility::public => true,
+            Visibility::private => false,
+        };
+
         let env = env.into();
         let hooks = StatusHooks::new(db, id);
 
@@ -99,7 +146,6 @@ impl Deployment {
         };
 
         let is_branch_deployment = !default_branch;
-        let is_public = default_branch;
         let commit_container = CommitContainer::new(
             build_queue.clone(),
             hooks,
@@ -115,7 +161,6 @@ impl Deployment {
             inistial_status,
             build_result,
         );
-        // let prisma_container = PrismaContainer::new(db_file, build_queue);
 
         Self {
             branch,
@@ -128,7 +173,6 @@ impl Deployment {
             created,
             forced_prod: project.prod_id.is_some_and(|prod_id| id == prod_id),
             app_container: commit_container.into(),
-            // prisma_container: prisma_container.into(),
         }
     }
 
@@ -143,20 +187,6 @@ impl Deployment {
     pub(crate) fn get_prod_hostname(&self, box_domain: &str, project_name: &str) -> String {
         Label::Prod {
             project: project_name.to_string(),
-        }
-        .format_hostname(box_domain)
-    }
-
-    pub(crate) fn get_db_hostname(&self, box_domain: &str, project_name: &str) -> String {
-        if self.default_branch {
-            Label::ProdDb {
-                project: project_name.to_string(),
-            }
-        } else {
-            Label::BranchDb {
-                project: project_name.to_string(),
-                deployment: self.url_id.to_string(),
-            }
         }
         .format_hostname(box_domain)
     }

@@ -1,4 +1,4 @@
-use anyhow::ensure;
+use anyhow::{anyhow, ensure};
 use flate2::read::GzDecoder;
 use http::StatusCode;
 use http_body_util::BodyExt;
@@ -137,7 +137,6 @@ impl Github {
         let content = Cursor::new(bytes);
         let mut archive = Archive::new(GzDecoder::new(content));
         for entry in archive.entries().unwrap() {
-            // let path: String = entry.unwrap().path().unwrap();
             let mut entry = entry.unwrap();
             let entry_path = entry.path().unwrap();
             let mut components = entry_path.components();
@@ -146,6 +145,27 @@ impl Github {
             entry.unpack(&path.join(inner_path)).unwrap();
         }
         Ok(())
+    }
+
+    #[tracing::instrument]
+    pub(crate) async fn download_file(
+        &self,
+        repo_id: i64,
+        sha: &str,
+        path: &str,
+    ) -> anyhow::Result<String> {
+        let crab = self.get_crab(repo_id).await?;
+        let (owner, name) = self.get_owner_and_name(repo_id).await?;
+        let mut contents = crab
+            .repos(owner, name)
+            .get_content()
+            .path(path)
+            .r#ref(sha)
+            .send()
+            .await?;
+        let content = contents.take_items().pop().ok_or(anyhow!("no content"))?;
+        let decoded = content.decoded_content();
+        decoded.ok_or(anyhow!("invalid content"))
     }
 
     #[tracing::instrument]

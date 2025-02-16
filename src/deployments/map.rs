@@ -156,7 +156,8 @@ impl DeploymentMap {
                         github.clone(),
                         db.clone(),
                         prod_db,
-                    );
+                    )
+                    .await;
                     self.deployments.insert((project, url_id), deployment);
                 } else {
                     panic!("illegal state, no prod bd found for deployment"); // TODO: remove this panic, make it imposible
