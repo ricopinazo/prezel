@@ -34,7 +34,7 @@ pub(crate) struct Deployment {
     pub(crate) app_container: Arc<Container>, // FIXME: try to remove Arc, only needed to make access to socket/public generic
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone, Copy)]
 enum Visibility {
     standard,
     public,
@@ -63,24 +63,8 @@ impl DeploymentConfig {
     }
 
     fn get_visibility(&self) -> Visibility {
-        self.visibility.unwrap_or(Visibility::standard)
+        self.visibility.clone().unwrap_or(Visibility::standard)
     }
-
-    // fn get_visibility_for_prod_deployment(&self) {
-    //     match self.visibility.unwrap_or(Visibility::standard) {
-    //         Visibility::standard => true,
-    //         Visibility::public => true,
-    //         Visibility::private => false,
-    //     }
-    // }
-
-    // fn get_visibility_for_preview_deployment(&self) {
-    //     match self.visibility.unwrap_or(Visibility::standard) {
-    //         Visibility::standard => false,
-    //         Visibility::public => true,
-    //         Visibility::private => false,
-    //     }
-    // }
 }
 
 impl Deployment {
