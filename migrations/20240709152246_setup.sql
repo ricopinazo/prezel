@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS projects (
-    id TEXT PRIMARY KEY NOT NULL,
+    id TEXT PRIMARY KEY NOT NULL, -- the reason to use UUIDs here and for the deployments is to avoid collisions between related resources (docker images, containers, folders, etc) from previous prezel runs on the same insatnce
     name TEXT NOT NULL UNIQUE,
     repo_id INTEGER NOT NULL,
     created INTEGER NOT NULL,
