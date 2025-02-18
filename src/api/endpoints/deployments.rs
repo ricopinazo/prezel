@@ -6,7 +6,7 @@ use actix_web::{
 
 use crate::{
     api::{
-        bearer::{AnyRole, OwnerRole},
+        bearer::{AnyRole, AdminRole},
         utils::clone_deployment,
         AppState,
     },
@@ -21,13 +21,13 @@ use crate::{
         (status = 200, description = "Deployment redeployed successfully"),
     ),
     security(
-        ("api_key" = [])
+        ("bearerAuth" = [])
     )
 )]
 #[post("/api/deployments/redeploy")]
 #[tracing::instrument]
 async fn redeploy(
-    auth: OwnerRole,
+    auth: AdminRole,
     deployment: Json<String>,
     state: Data<AppState>,
 ) -> impl Responder {
@@ -42,13 +42,13 @@ async fn redeploy(
         (status = 200, description = "Deployment deleted successfully"),
     ),
     security(
-        ("api_key" = [])
+        ("bearerAuth" = [])
     )
 )]
 #[delete("/api/deployments/{id}")]
 #[tracing::instrument]
 async fn delete_deployment(
-    auth: OwnerRole,
+    auth: AdminRole,
     state: Data<AppState>,
     id: Path<String>,
 ) -> impl Responder {
@@ -63,12 +63,12 @@ async fn delete_deployment(
         (status = 200, description = "Sync triggered successfully"),
     ),
     security(
-        ("api_key" = [])
+        ("bearerAuth" = [])
     )
 )]
 #[post("/api/deployments/sync")]
 #[tracing::instrument]
-async fn sync(auth: OwnerRole, state: Data<AppState>) -> impl Responder {
+async fn sync(auth: AdminRole, state: Data<AppState>) -> impl Responder {
     state.manager.full_sync_with_github().await;
     HttpResponse::Ok()
 }
@@ -81,7 +81,7 @@ async fn sync(auth: OwnerRole, state: Data<AppState>) -> impl Responder {
         (status = 500, description = "Internal error when fetching logs", body = String)
     ),
     security(
-        ("api_key" = [])
+        ("bearerAuth" = [])
     )
 )]
 #[get("/api/deployments/{id}/logs")]
@@ -123,13 +123,13 @@ async fn get_deployment_logs(
         // (status = 500, description = "Internal error when fetching logs", body = String) // TODO: re-enable errors
     ),
     security(
-        ("api_key" = [])
+        ("bearerAuth" = [])
     )
 )]
 #[get("/api/deployments/{id}/build")]
 #[tracing::instrument]
 async fn get_deployment_build_logs(
-    auth: OwnerRole,
+    auth: AdminRole,
     state: Data<AppState>,
     id: Path<String>,
 ) -> impl Responder {

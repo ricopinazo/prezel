@@ -8,7 +8,7 @@ use crate::{api::bearer::AnyRole, docker::get_container_execution_logs};
         (status = 200, description = "Fetched system logs", body = [Log])
     ),
     security(
-        ("api_key" = [])
+        ("bearerAuth" = [])
     )
 )]
 #[get("/api/system/logs")]

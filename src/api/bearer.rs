@@ -46,15 +46,15 @@ impl FromRequest for AnyRole {
 }
 
 #[derive(Debug, Clone)]
-pub struct OwnerRole;
+pub struct AdminRole;
 
-impl FromRequest for OwnerRole {
+impl FromRequest for AdminRole {
     type Future = Ready<Result<Self, Self::Error>>;
     type Error = Error;
 
     fn from_request(req: &HttpRequest, _payload: &mut Payload) -> <Self as FromRequest>::Future {
         ready(AnyRole::validate(req).and_then(|claims| {
-            if claims.0.role == Role::owner {
+            if claims.0.role == Role::admin {
                 Ok(Self)
             } else {
                 Err(ErrorUnauthorized("not enough permissions"))

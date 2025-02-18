@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub(crate) enum Role {
-    owner,
-    member,
+    admin,
+    user,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

@@ -17,7 +17,6 @@ use aws_sdk_route53::types::{
     Change, ChangeAction, ChangeBatch, ChangeStatus, ResourceRecord, ResourceRecordSet, RrType,
 };
 use dotenv::dotenv;
-use http::StatusCode;
 use jsonwebtoken::{encode, EncodingKey, Header};
 use octocrab::models::{AppId, Repository};
 use secrecy::ExposeSecret;
@@ -29,8 +28,8 @@ const SECRET: &str = "secret";
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub(crate) enum Role {
-    owner,
-    member,
+    admin,
+    user,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -134,7 +133,7 @@ fn owner_conf() -> Configuration {
     Configuration {
         base_path: format!("https://api.{INSTANCE_HOSTNAME}"),
         // client: reqwest::Client::new(),
-        bearer_access_token: Some(generate_token(Role::owner)),
+        bearer_access_token: Some(generate_token(Role::admin)),
         ..Default::default()
     }
 }

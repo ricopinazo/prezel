@@ -5,7 +5,7 @@ use anyhow::ensure;
 use tracing::error;
 
 use crate::{
-    api::bearer::{AnyRole, OwnerRole},
+    api::bearer::{AdminRole, AnyRole},
     docker::{
         create_container_with_explicit_binds, get_image_id, get_prezel_image_version, pull_image,
         run_container,
@@ -19,7 +19,7 @@ use crate::{
         (status = 500, description = "A problem was found when trying to read the version"),
     ),
     security(
-        ("api_key" = [])
+        ("bearerAuth" = [])
     )
 )]
 #[get("/version")]
@@ -38,11 +38,11 @@ async fn get_version(_auth: AnyRole) -> impl Responder {
         (status = 500, description = "A problem was found when trying to update the version"),
     ),
     security(
-        ("api_key" = [])
+        ("bearerAuth" = [])
     )
 )]
 #[post("/version")]
-async fn update_version(_auth: OwnerRole, version: Json<String>) -> impl Responder {
+async fn update_version(_auth: AdminRole, version: Json<String>) -> impl Responder {
     dbg!();
     match run_update_container(&version.0).await {
         Ok(()) => HttpResponse::Ok().finish(),

@@ -7,7 +7,7 @@ use futures::future::join_all;
 
 use crate::{
     api::{
-        bearer::{AnyRole, OwnerRole},
+        bearer::{AnyRole, AdminRole},
         utils::{get_all_deployments, get_prod_deployment, get_prod_deployment_id},
         AppState, ErrorResponse, FullProjectInfo, ProjectInfo,
     },
@@ -21,7 +21,7 @@ use crate::{
         (status = 200, description = "Projets returned successfully", body = [ProjectInfo])
     ),
     security(
-        ("api_key" = [])
+        ("bearerAuth" = [])
     )
 )]
 #[get("/api/apps")]
@@ -63,7 +63,7 @@ async fn get_projects(auth: AnyRole, state: Data<AppState>) -> impl Responder {
         (status = 404, description = "Project not found", body = ErrorResponse)
     ),
     security(
-        ("api_key" = [])
+        ("bearerAuth" = [])
     )
 )]
 #[get("/api/apps/{name}")]
@@ -107,13 +107,13 @@ async fn get_project(auth: AnyRole, state: Data<AppState>, name: Path<String>) -
         (status = 400, description = "'api' is not a valid app name"),
     ),
     security(
-        ("api_key" = [])
+        ("bearerAuth" = [])
     )
 )]
 #[post("/api/apps")] // TODO: return project when successfully inserted
 #[tracing::instrument]
 async fn create_project(
-    _auth: OwnerRole,
+    _auth: AdminRole,
     project: Json<InsertProject>,
     state: Data<AppState>,
 ) -> impl Responder {
@@ -134,13 +134,13 @@ async fn create_project(
         // (status = 409, description = "Todo with id already exists", body = ErrorResponse, example = json!(ErrorResponse::Conflict(String::from("id = 1"))))
     ),
     security(
-        ("api_key" = [])
+        ("bearerAuth" = [])
     )
 )]
 #[patch("/api/apps/{id}")]
 #[tracing::instrument]
 async fn update_project(
-    auth: OwnerRole,
+    auth: AdminRole,
     project: Json<UpdateProject>,
     state: Data<AppState>,
     id: Path<String>,
@@ -157,13 +157,13 @@ async fn update_project(
         (status = 200, description = "Project deleted successfully"),
     ),
     security(
-        ("api_key" = [])
+        ("bearerAuth" = [])
     )
 )]
 #[delete("/api/apps/{id}")]
 #[tracing::instrument]
 async fn delete_project(
-    auth: OwnerRole,
+    auth: AdminRole,
     req: HttpRequest,
     state: Data<AppState>,
     id: Path<String>,
@@ -181,12 +181,12 @@ async fn delete_project(
         (status = 404, description = "Project not found", body = ErrorResponse)
     ),
     security(
-        ("api_key" = [])
+        ("bearerAuth" = [])
     )
 )]
 #[get("/api/apps/{id}/env")]
 #[tracing::instrument]
-async fn get_env(auth: OwnerRole, state: Data<AppState>, id: Path<String>) -> impl Responder {
+async fn get_env(auth: AdminRole, state: Data<AppState>, id: Path<String>) -> impl Responder {
     let id = id.into_inner().into();
     match state.db.get_project(&id).await {
         Some(project) => HttpResponse::Ok().json(project.env),
@@ -201,13 +201,13 @@ async fn get_env(auth: OwnerRole, state: Data<AppState>, id: Path<String>) -> im
         (status = 200, description = "Env upserted successfully"),
     ),
     security(
-        ("api_key" = [])
+        ("bearerAuth" = [])
     )
 )]
 #[patch("/api/apps/{id}/env")]
 #[tracing::instrument]
 async fn upsert_env(
-    auth: OwnerRole,
+    auth: AdminRole,
     env: Json<EnvVar>,
     state: Data<AppState>,
     id: Path<String>,
@@ -224,13 +224,13 @@ async fn upsert_env(
         (status = 200, description = "Env deleted successfully"),
     ),
     security(
-        ("api_key" = [])
+        ("bearerAuth" = [])
     )
 )]
 #[delete("/api/apps/{id}/env/{name}")]
 #[tracing::instrument]
 async fn delete_env(
-    auth: OwnerRole,
+    auth: AdminRole,
     state: Data<AppState>,
     path: Path<(String, String)>,
 ) -> impl Responder {

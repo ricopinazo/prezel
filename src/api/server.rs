@@ -31,7 +31,7 @@ pub(crate) fn get_open_api() -> OpenApiStruct {
         .components
         .as_mut()
         .unwrap()
-        .add_security_scheme("api_key", SecurityScheme::Http(http));
+        .add_security_scheme("bearerAuth", SecurityScheme::Http(http));
     openapi
 }
 
