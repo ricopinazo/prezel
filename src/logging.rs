@@ -44,7 +44,7 @@ pub(crate) struct RequestLog {
 pub(crate) struct Log {
     pub(crate) time: i64,
     pub(crate) level: Level,
-    pub(crate) deployment: NanoId,
+    pub(crate) deployment: String,
     pub(crate) host: Option<String>,
     pub(crate) method: Option<String>, // TODO: make enum out of this?
     pub(crate) path: Option<String>,
@@ -64,7 +64,7 @@ impl Log {
         Self {
             level,
             time: value.time,
-            deployment,
+            deployment: deployment.into(),
             host: None,
             method: None,
             path: None,
@@ -79,7 +79,7 @@ impl From<RequestLog> for Log {
         Self {
             level: value.level,
             time: value.time,
-            deployment: value.deployment,
+            deployment: value.deployment.into(),
             host: Some(value.host),
             method: Some(value.method),
             path: Some(value.path),
@@ -100,7 +100,7 @@ impl From<BuildLog> for Log {
         Self {
             level,
             time: value.timestamp,
-            deployment: value.deployment,
+            deployment: value.deployment.into(),
             host: None,
             method: None,
             path: None,

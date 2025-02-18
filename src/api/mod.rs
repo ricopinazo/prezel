@@ -34,6 +34,7 @@ pub(crate) const API_PORT: u16 = 5045;
         apps::create_project,
         apps::update_project,
         apps::delete_project,
+        apps::get_env,
         apps::upsert_env,
         apps::delete_env,
         deployments::redeploy,
@@ -61,6 +62,7 @@ fn configure_service(store: Data<AppState>) -> impl FnOnce(&mut ServiceConfig) {
             .service(apps::create_project)
             .service(apps::update_project)
             .service(apps::delete_project)
+            .service(apps::get_env)
             .service(apps::upsert_env)
             .service(apps::delete_env)
             .service(deployments::redeploy)
@@ -294,7 +296,6 @@ struct ProjectInfo {
     id: String,
     repo: Repository,
     created: i64,
-    env: Vec<EditedEnvVar>,
     custom_domains: Vec<String>,
     prod_deployment_id: Option<String>,
     prod_deployment: Option<ApiDeployment>,
@@ -306,7 +307,6 @@ struct FullProjectInfo {
     id: String,
     repo: Repository,
     created: i64,
-    env: Vec<EditedEnvVar>,
     custom_domains: Vec<String>,
     prod_deployment_id: Option<String>,
     prod_deployment: Option<ApiDeployment>,

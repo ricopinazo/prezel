@@ -13,6 +13,7 @@ use crate::{
     time::{self, now},
 };
 
+// TODO: move this into its own thing
 #[derive(Clone, Debug, PartialEq, Eq, Hash, sqlx::Type, Serialize, Deserialize)]
 #[sqlx(transparent)]
 pub(crate) struct NanoId(String);
@@ -27,9 +28,9 @@ impl NanoId {
     }
 }
 
-impl ToString for NanoId {
-    fn to_string(&self) -> String {
-        self.0.to_string()
+impl std::fmt::Display for NanoId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
     }
 }
 

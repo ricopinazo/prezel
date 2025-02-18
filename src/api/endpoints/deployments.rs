@@ -16,7 +16,7 @@ use crate::{
 // TODO: this should take the id from the PATH, should not be POST I guess
 /// Re-deploy based on an existing deployment
 #[utoipa::path(
-    request_body = i64,
+    request_body = String,
     responses(
         (status = 200, description = "Deployment redeployed successfully"),
     ),
@@ -105,7 +105,7 @@ async fn get_deployment_logs(
     match read_request_event_logs() {
         Ok(logs) => {
             let mut logs = logs
-                .filter(|log| log.deployment == id)
+                .filter(|log| &log.deployment == id.as_str())
                 .chain(container_logs)
                 .collect::<Vec<_>>();
             logs.sort_by_key(|log| -log.time); // from latest to oldest

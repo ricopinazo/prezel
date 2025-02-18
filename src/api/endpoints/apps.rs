@@ -18,7 +18,7 @@ use crate::{
 /// Get projects
 #[utoipa::path(
     responses(
-        (status = 200, description = "Hello world", body = [ProjectInfo])
+        (status = 200, description = "Projets returned successfully", body = [ProjectInfo])
     ),
     security(
         ("api_key" = [])
@@ -46,7 +46,6 @@ async fn get_projects(auth: AnyRole, state: Data<AppState>) -> impl Responder {
                 id: project.id.to_string(),
                 repo: repo.into(),
                 created: project.created,
-                env: project.env,
                 custom_domains: project.custom_domains,
                 prod_deployment_id: prod_deployment_id.into_opt_string(),
                 prod_deployment,
@@ -60,7 +59,7 @@ async fn get_projects(auth: AnyRole, state: Data<AppState>) -> impl Responder {
 /// Get project by name
 #[utoipa::path(
     responses(
-        (status = 200, description = "Hello world", body = FullProjectInfo),
+        (status = 200, description = "Projet returned successfully", body = FullProjectInfo),
         (status = 404, description = "Project not found", body = ErrorResponse)
     ),
     security(
@@ -90,7 +89,6 @@ async fn get_project(auth: AnyRole, state: Data<AppState>, name: Path<String>) -
                 id: project.id.into(),
                 repo: repo.into(),
                 created: project.created,
-                env: project.env,
                 custom_domains: project.custom_domains,
                 prod_deployment_id: prod_deployment_id.into_opt_string(),
                 prod_deployment,
@@ -174,6 +172,26 @@ async fn delete_project(
     state.db.delete_project(&id.into_inner().into()).await;
     state.manager.sync_with_db().await;
     HttpResponse::Ok()
+}
+
+/// Get env
+#[utoipa::path(
+    responses(
+        (status = 200, description = "Env returned successfully", body = [EditedEnvVar]),
+        (status = 404, description = "Project not found", body = ErrorResponse)
+    ),
+    security(
+        ("api_key" = [])
+    )
+)]
+#[get("/api/apps/{id}/env")]
+#[tracing::instrument]
+async fn get_env(auth: OwnerRole, state: Data<AppState>, id: Path<String>) -> impl Responder {
+    let id = id.into_inner().into();
+    match state.db.get_project(&id).await {
+        Some(project) => HttpResponse::Ok().json(project.env),
+        None => HttpResponse::NotFound().json(ErrorResponse::NotFound(format!("id = {id}"))),
+    }
 }
 
 /// Upsert env
