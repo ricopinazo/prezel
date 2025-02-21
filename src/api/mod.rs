@@ -10,9 +10,8 @@ use crate::{
     },
     deployments::{deployment::Deployment, manager::Manager},
     github::Github,
-    label::Label,
     logging::{Level, Log},
-    sqlite_db::SqliteDbSetup,
+    utils::PlusHttps,
 };
 
 mod bearer;
@@ -123,34 +122,6 @@ struct LibsqlDb {
     token: String,
 }
 
-impl LibsqlDb {
-    #[tracing::instrument]
-    fn new(
-        db_setup: SqliteDbSetup,
-        deployment_url_id: Option<String>,
-        box_domain: &str,
-        project_name: &str,
-    ) -> Self {
-        let url = if let Some(url_id) = deployment_url_id {
-            Label::BranchDb {
-                project: project_name.to_string(),
-                deployment: url_id,
-            }
-        } else {
-            Label::ProdDb {
-                project: project_name.to_string(),
-            }
-        }
-        .format_hostname(box_domain)
-        .plus_https();
-
-        Self {
-            url,
-            token: db_setup.auth.token,
-        }
-    }
-}
-
 #[derive(Serialize, ToSchema)]
 #[schema(title = "Deployment")]
 struct ApiDeployment {
@@ -188,13 +159,15 @@ impl ApiDeployment {
                 let container_status = deployment.app_container.status.read().await.clone();
                 let status = container_status.to_status();
 
-                let project_name = &db_deployment.project.name;
-                let url = Some(deployment.get_app_hostname(box_domain, project_name)).plus_https();
-                let prod_url = is_prod
-                    .then_some(deployment.get_prod_hostname(box_domain, project_name))
-                    .plus_https();
+                let url = Some(db_deployment.get_app_base_url(box_domain));
+                let prod_url = is_prod.then_some(db_deployment.get_prod_base_url(box_domain));
                 let custom_urls = if is_prod {
-                    db_deployment.project.custom_domains.plus_https()
+                    db_deployment
+                        .project
+                        .custom_domains
+                        .iter()
+                        .map(|domain| domain.plus_https())
+                        .collect()
                 } else {
                     vec![]
                 };
@@ -203,16 +176,15 @@ impl ApiDeployment {
 
                 let libsql_db = if is_prod {
                     let prod_db = manager.get_prod_db(&deployment.project).await;
-                    prod_db.map(|setup| LibsqlDb::new(setup, None, box_domain, project_name))
+                    prod_db.map(|setup| LibsqlDb {
+                        url: db_deployment.get_prod_sqlite_base_url(box_domain),
+                        token: setup.auth.token,
+                    })
                 } else {
                     let branch_db = container_status.get_db_setup();
-                    branch_db.map(|setup| {
-                        LibsqlDb::new(
-                            setup,
-                            Some(deployment.url_id.clone()),
-                            box_domain,
-                            project_name,
-                        )
+                    branch_db.map(|setup| LibsqlDb {
+                        url: db_deployment.get_branch_sqlite_base_url(box_domain),
+                        token: setup.auth.token.clone(),
                     })
                 };
 
@@ -247,27 +219,27 @@ impl ApiDeployment {
     }
 }
 
-trait PlusHttps {
-    fn plus_https(&self) -> Self;
-}
+// trait PlusHttps {
+//     fn plus_https(&self) -> Self;
+// }
 
-impl PlusHttps for String {
-    fn plus_https(&self) -> Self {
-        format!("https://{self}")
-    }
-}
+// impl PlusHttps for String {
+//     fn plus_https(&self) -> Self {
+//         format!("https://{self}")
+//     }
+// }
 
-impl PlusHttps for Option<String> {
-    fn plus_https(&self) -> Self {
-        self.as_ref().map(|hostname| hostname.plus_https())
-    }
-}
+// impl PlusHttps for Option<String> {
+//     fn plus_https(&self) -> Self {
+//         self.as_ref().map(|hostname| hostname.plus_https())
+//     }
+// }
 
-impl PlusHttps for Vec<String> {
-    fn plus_https(&self) -> Self {
-        self.iter().map(|hostname| hostname.plus_https()).collect()
-    }
-}
+// impl PlusHttps for Vec<String> {
+//     fn plus_https(&self) -> Self {
+//         self.iter().map(|hostname| hostname.plus_https()).collect()
+//     }
+// }
 
 #[derive(Serialize, ToSchema)]
 struct Repository {
@@ -294,7 +266,7 @@ impl From<CrabRepository> for Repository {
 struct ProjectInfo {
     name: String,
     id: String,
-    repo: Repository,
+    repo: Option<Repository>,
     created: i64,
     custom_domains: Vec<String>,
     prod_deployment_id: Option<String>,
@@ -305,7 +277,7 @@ struct ProjectInfo {
 struct FullProjectInfo {
     name: String,
     id: String,
-    repo: Repository,
+    repo: Option<Repository>,
     created: i64,
     custom_domains: Vec<String>,
     prod_deployment_id: Option<String>,

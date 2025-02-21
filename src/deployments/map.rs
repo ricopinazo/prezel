@@ -8,7 +8,7 @@ use futures::{stream, Stream, StreamExt};
 
 use crate::{
     container::{Container, ContainerStatus},
-    db::{BuildResult, Db, NanoId},
+    db::{nano_id::NanoId, BuildResult, Db},
     github::Github,
     sqlite_db::{ProdSqliteDb, SqliteDbSetup},
     tls::CertificateStore,

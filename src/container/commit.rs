@@ -1,3 +1,4 @@
+use anyhow::ensure;
 use nixpacks::{
     create_docker_image,
     nixpacks::{builder::docker::DockerBuilderOptions, plan::generator::GeneratePlanOptions},
@@ -11,11 +12,11 @@ use tempfile::TempDir;
 use tokio::fs;
 
 use crate::{
-    db::NanoId,
-    deployment_hooks::StatusHooks,
+    db::nano_id::NanoId,
     docker::{get_managed_image_id, ImageName},
     env::EnvVars,
     github::Github,
+    hooks::StatusHooks,
     sqlite_db::{BranchSqliteDb, ProdSqliteDb},
 };
 
@@ -137,9 +138,8 @@ impl CommitContainer {
     async fn build_context(&self, path: &Path) -> anyhow::Result<PathBuf> {
         self.github
             .download_commit(self.repo_id, &self.sha, &path)
-            .await
-            .unwrap(); // FIXME: this should result in an Error type that causes the build tu be cancelled and retry later on
-        assert!(path.exists());
+            .await?;
+        ensure!(path.exists());
 
         let inner_path = path.join(&self.root);
 

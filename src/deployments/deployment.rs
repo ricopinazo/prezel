@@ -1,5 +1,5 @@
 use std::future::Future;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Component, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -8,9 +8,8 @@ use serde::Deserialize;
 
 use crate::container::commit::CommitContainer;
 use crate::container::ContainerStatus;
-use crate::db::{BuildResult, Deployment as DbDeployment, NanoId};
-use crate::deployment_hooks::StatusHooks;
-use crate::label::Label;
+use crate::db::{nano_id::NanoId, BuildResult, Deployment as DbDeployment};
+use crate::hooks::StatusHooks;
 use crate::sqlite_db::ProdSqliteDb;
 use crate::{
     container::Container,
@@ -35,10 +34,11 @@ pub(crate) struct Deployment {
 }
 
 #[derive(Deserialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
 enum Visibility {
-    standard,
-    public,
-    private,
+    Standard,
+    Public,
+    Private,
 }
 
 #[derive(Deserialize, Default)]
@@ -63,7 +63,7 @@ impl DeploymentConfig {
     }
 
     fn get_visibility(&self) -> Visibility {
-        self.visibility.clone().unwrap_or(Visibility::standard)
+        self.visibility.clone().unwrap_or(Visibility::Standard)
     }
 }
 
@@ -110,13 +110,13 @@ impl Deployment {
             .await
             .unwrap_or_default();
         let is_public = match conf.get_visibility() {
-            Visibility::standard => default_branch,
-            Visibility::public => true,
-            Visibility::private => false,
+            Visibility::Standard => default_branch,
+            Visibility::Public => true,
+            Visibility::Private => false,
         };
 
         let env = env.into();
-        let hooks = StatusHooks::new(db, id.clone());
+        let hooks = StatusHooks::new(id.clone(), db, github.clone());
 
         let (inistial_status, build_result) = match deployment.result {
             Some(BuildResult::Failed) => (ContainerStatus::Failed, Some(BuildResult::Failed)),
@@ -162,20 +162,5 @@ impl Deployment {
             forced_prod,
             app_container: commit_container.into(),
         }
-    }
-
-    pub(crate) fn get_app_hostname(&self, box_domain: &str, project_name: &str) -> String {
-        Label::Deployment {
-            project: project_name.to_string(),
-            deployment: self.url_id.to_string(),
-        }
-        .format_hostname(box_domain)
-    }
-
-    pub(crate) fn get_prod_hostname(&self, box_domain: &str, project_name: &str) -> String {
-        Label::Prod {
-            project: project_name.to_string(),
-        }
-        .format_hostname(box_domain)
     }
 }

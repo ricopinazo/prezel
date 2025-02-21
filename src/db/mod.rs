@@ -1,6 +1,7 @@
 use std::{collections::HashMap, ops::Deref, sync::Arc};
 
 use futures::{stream, StreamExt};
+use nano_id::{MaybeNanoId, NanoId};
 use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
 use sqlx::{sqlite::SqlitePool, FromRow, Pool, Sqlite};
@@ -8,62 +9,12 @@ use tracing::info;
 use utoipa::ToSchema;
 
 use crate::{
-    alphabet,
+    label::Label,
     paths::get_instance_db_path,
-    time::{self, now},
+    utils::{now, PlusHttps, LOWERCASE_PLUS_NUMBERS},
 };
 
-// TODO: move this into its own thing
-#[derive(Clone, Debug, PartialEq, Eq, Hash, sqlx::Type, Serialize, Deserialize)]
-#[sqlx(transparent)]
-pub(crate) struct NanoId(String);
-
-impl NanoId {
-    fn random() -> Self {
-        Self(uuid::Uuid::new_v4().to_string())
-    }
-
-    pub(crate) fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl std::fmt::Display for NanoId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl From<String> for NanoId {
-    fn from(value: String) -> Self {
-        Self(value)
-    }
-}
-
-impl From<NanoId> for String {
-    fn from(value: NanoId) -> Self {
-        value.0
-    }
-}
-
-#[derive(Debug, Clone)]
-struct MaybeNanoId(Option<NanoId>);
-
-impl From<Option<String>> for MaybeNanoId {
-    fn from(value: Option<String>) -> Self {
-        Self(value.map(|id| id.into()))
-    }
-}
-
-pub(crate) trait IntoOptString {
-    fn into_opt_string(self) -> Option<String>;
-}
-
-impl IntoOptString for Option<NanoId> {
-    fn into_opt_string(self) -> Option<String> {
-        self.map(|id| id.into())
-    }
-}
+pub(crate) mod nano_id;
 
 #[derive(sqlx::Type, PartialEq, Clone, Copy, Debug)]
 #[sqlx(rename_all = "lowercase")]
@@ -80,6 +31,43 @@ struct PlainProject {
     pub(crate) created: i64,
     pub(crate) root: String,
     pub(crate) prod_id: MaybeNanoId,
+}
+
+#[derive(FromRow, Debug)]
+struct PlainDeployment {
+    pub(crate) id: NanoId,
+    pub(crate) slug: String,
+    pub(crate) timestamp: i64,
+    pub(crate) created: i64,
+    pub(crate) sha: String,
+    pub(crate) branch: String, // I might need to have here a list of prs somehow
+    pub(crate) default_branch: i64,
+    pub(crate) result: Option<BuildResult>,
+    pub(crate) build_started: Option<i64>,
+    pub(crate) build_finished: Option<i64>,
+    pub(crate) project: NanoId,
+}
+
+#[derive(Debug)]
+pub(crate) struct Deployment {
+    pub(crate) id: NanoId,
+    pub(crate) url_id: String,
+    pub(crate) timestamp: i64,
+    pub(crate) created: i64,
+    pub(crate) sha: String,
+    pub(crate) branch: String, // I might need to have here a list of prs somehow
+    pub(crate) default_branch: i64,
+    pub(crate) result: Option<BuildResult>,
+    pub(crate) build_started: Option<i64>,
+    pub(crate) build_finished: Option<i64>,
+    pub(crate) project: NanoId,
+    pub(crate) env: Vec<EnvVar>,
+}
+
+impl Deployment {
+    pub(crate) fn is_default_branch(&self) -> bool {
+        self.default_branch != 0
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, ToSchema)]
@@ -121,43 +109,6 @@ pub(crate) struct UpdateProject {
     custom_domains: Option<Vec<String>>,
 }
 
-#[derive(FromRow, Debug)]
-struct PlainDeployment {
-    pub(crate) id: NanoId,
-    pub(crate) slug: String,
-    pub(crate) timestamp: i64,
-    pub(crate) created: i64,
-    pub(crate) sha: String,
-    pub(crate) branch: String, // I might need to have here a list of prs somehow
-    pub(crate) default_branch: i64,
-    pub(crate) result: Option<BuildResult>,
-    pub(crate) build_started: Option<i64>,
-    pub(crate) build_finished: Option<i64>,
-    pub(crate) project: NanoId,
-}
-
-#[derive(Debug)]
-pub(crate) struct Deployment {
-    pub(crate) id: NanoId,
-    pub(crate) url_id: String,
-    pub(crate) timestamp: i64,
-    pub(crate) created: i64,
-    pub(crate) sha: String,
-    pub(crate) branch: String, // I might need to have here a list of prs somehow
-    pub(crate) default_branch: i64,
-    pub(crate) result: Option<BuildResult>,
-    pub(crate) build_started: Option<i64>,
-    pub(crate) build_finished: Option<i64>,
-    pub(crate) project: NanoId,
-    pub(crate) env: Vec<EnvVar>,
-}
-
-impl Deployment {
-    pub(crate) fn is_default_branch(&self) -> bool {
-        self.default_branch != 0
-    }
-}
-
 #[derive(FromRow)]
 pub(crate) struct BuildLog {
     pub(crate) id: i64,
@@ -171,6 +122,42 @@ pub(crate) struct BuildLog {
 pub(crate) struct DeploymentWithProject {
     pub(crate) deployment: Deployment,
     pub(crate) project: Arc<Project>,
+}
+
+impl DeploymentWithProject {
+    pub(crate) fn get_app_base_url(&self, box_domain: &str) -> String {
+        Label::Deployment {
+            project: self.project.name.clone(),
+            deployment: self.url_id.to_string(),
+        }
+        .format_hostname(box_domain)
+        .plus_https()
+    }
+
+    pub(crate) fn get_prod_base_url(&self, box_domain: &str) -> String {
+        Label::Prod {
+            project: self.project.name.clone(),
+        }
+        .format_hostname(box_domain)
+        .plus_https()
+    }
+
+    pub(crate) fn get_branch_sqlite_base_url(&self, box_domain: &str) -> String {
+        Label::BranchDb {
+            project: self.project.name.clone(),
+            deployment: self.url_id.clone(),
+        }
+        .format_hostname(box_domain)
+        .plus_https()
+    }
+
+    pub(crate) fn get_prod_sqlite_base_url(&self, box_domain: &str) -> String {
+        Label::ProdDb {
+            project: self.project.name.clone(),
+        }
+        .format_hostname(box_domain)
+        .plus_https()
+    }
 }
 
 impl Deref for DeploymentWithProject {
@@ -192,7 +179,7 @@ pub(crate) struct InsertDeployment {
 }
 
 fn create_deployment_url_id() -> String {
-    nanoid!(10, &alphabet::LOWERCASE_PLUS_NUMBERS)
+    nanoid!(10, &LOWERCASE_PLUS_NUMBERS)
 }
 
 #[derive(Clone, Debug)]
@@ -309,7 +296,7 @@ impl Db {
     ) {
         // TODO: transform this into a tx
         let id = NanoId::random();
-        let created = time::now();
+        let created = now();
         sqlx::query!(
             "insert into projects (id, name, repo_id, created, root) values (?, ?, ?, ?, ?)",
             id,
@@ -321,7 +308,7 @@ impl Db {
         .execute(&self.conn)
         .await
         .unwrap();
-        let edited = time::now();
+        let edited = now();
         for env in env {
             sqlx::query!(
                 "insert into env (name, value, edited, project) values (?, ?, ?, ?)",
@@ -382,7 +369,7 @@ impl Db {
 
     #[tracing::instrument]
     pub(crate) async fn upsert_env(&self, project: &NanoId, name: &str, value: &str) {
-        let edited = time::now();
+        let edited = now();
         sqlx::query!(
             "insert into env (project, name, value, edited) values (?, ?, ?, ?) on conflict (name, project) do update set value=?, edited=?",
             project,
@@ -526,7 +513,7 @@ impl Db {
 
     #[tracing::instrument]
     pub(crate) async fn insert_deployment(&self, deployment: InsertDeployment) {
-        let created = time::now();
+        let created = now();
         let id = NanoId::random();
         let url_id = create_deployment_url_id();
         sqlx::query!(

@@ -1,6 +1,6 @@
 use futures::{stream, StreamExt};
 
-use crate::db::{Db, InsertDeployment, NanoId, Project};
+use crate::db::{nano_id::NanoId, Db, InsertDeployment, Project};
 
 use super::{ApiDeployment, AppState};
 

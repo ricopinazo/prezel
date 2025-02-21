@@ -5,7 +5,7 @@ use tokio::sync::RwLock;
 
 use crate::{
     container::Container,
-    db::{Db, NanoId},
+    db::{nano_id::NanoId, Db},
     github::Github,
     label::Label,
     sqlite_db::SqliteDbSetup,

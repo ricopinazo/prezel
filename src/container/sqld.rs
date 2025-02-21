@@ -1,4 +1,4 @@
-use crate::{deployment_hooks::NoopHooks, deployments::worker::WorkerHandle, paths::HostFile};
+use crate::{deployments::worker::WorkerHandle, hooks::NoopHooks, paths::HostFile};
 
 use super::{BuildResult, Container, ContainerConfig, ContainerSetup, ContainerStatus};
 
@@ -45,7 +45,7 @@ impl SqldContainer {
 impl ContainerSetup for SqldContainer {
     fn build<'a>(
         &'a self,
-        hooks: &'a Box<dyn super::DeploymentHooks>,
+        _hooks: &'a Box<dyn super::DeploymentHooks>,
     ) -> std::pin::Pin<
         Box<dyn std::future::Future<Output = anyhow::Result<super::BuildOutput>> + Send + 'a>,
     > {

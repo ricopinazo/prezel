@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::{
-    db::{BuildLog, NanoId},
+    db::{nano_id::NanoId, BuildLog},
     docker::{DockerLog, LogType},
     paths::get_instance_log_dir,
 };

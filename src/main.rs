@@ -8,27 +8,27 @@ use tls::CertificateStore;
 use traces::init_tracing_subscriber;
 use tracing::info;
 
-mod alphabet;
 mod api;
 mod conf;
 mod container;
 mod db;
-mod deployment_hooks;
 mod deployments;
 mod docker;
 mod docker_bridge;
 mod env;
 mod github;
+mod hooks;
 mod label;
 mod listener;
 mod logging;
 mod paths;
+mod provider;
 mod proxy;
 mod sqlite_db;
-mod time;
 mod tls;
 mod tokens;
 mod traces;
+mod utils;
 
 pub(crate) const DOCKER_PORT: u16 = 5046;
 

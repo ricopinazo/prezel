@@ -54,7 +54,7 @@ impl FromRequest for AdminRole {
 
     fn from_request(req: &HttpRequest, _payload: &mut Payload) -> <Self as FromRequest>::Future {
         ready(AnyRole::validate(req).and_then(|claims| {
-            if claims.0.role == Role::admin {
+            if claims.0.role == Role::Admin {
                 Ok(Self)
             } else {
                 Err(ErrorUnauthorized("not enough permissions"))

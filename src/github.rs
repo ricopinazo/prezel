@@ -1,6 +1,5 @@
-use anyhow::{anyhow, ensure};
+use anyhow::anyhow;
 use flate2::read::GzDecoder;
-use http::StatusCode;
 use http_body_util::BodyExt;
 use octocrab::{
     models::{pulls::PullRequest, IssueState, Repository},
@@ -10,28 +9,14 @@ use octocrab::{
     },
     Octocrab,
 };
-use serde::Serialize;
 use std::{collections::HashMap, io::Cursor, path::Path, sync::Arc};
 use tar::Archive;
 use tokio::sync::RwLock;
-use tracing::info;
 
-use crate::{conf::Conf, time::now};
+use crate::{provider, utils::now};
 
 const CHECK_NAME: &str = "prezel";
 const COMMENT_START: &'static str = "[prezel]: authored";
-
-#[derive(Serialize, Debug)]
-struct RequestBody {
-    secret: String,
-    id: String,
-    repo: i64,
-}
-
-#[derive(Serialize)]
-struct RepositoriesParameters {
-    per_page: usize,
-}
 
 pub(crate) struct Commit {
     pub(crate) timestamp: i64,
@@ -70,24 +55,21 @@ impl Github {
     #[tracing::instrument]
     pub(crate) async fn get_repo(&self, id: i64) -> anyhow::Result<Option<Repository>> {
         let crab = self.get_crab(id).await?;
-        Ok(crab
-            .get(format!("/repositories/{id}"), None::<&()>)
-            .await
-            .unwrap())
+        Ok(crab.get(format!("/repositories/{id}"), None::<&()>).await?)
     }
 
-    #[tracing::instrument]
-    pub(crate) async fn get_pull(&self, repo_id: i64, number: u64) -> anyhow::Result<PullRequest> {
-        let crab = self.get_crab(repo_id).await?;
-        let (owner, name) = self.get_owner_and_name(repo_id).await?;
-        Ok(crab.pulls(owner, name).get(number).await?)
-    }
+    // #[tracing::instrument]
+    // pub(crate) async fn get_pull(&self, repo_id: i64, number: u64) -> anyhow::Result<PullRequest> {
+    //     let crab = self.get_crab(repo_id).await?;
+    //     let (owner, name) = self.get_owner_and_name(repo_id).await?;
+    //     Ok(crab.pulls(owner, name).get(number).await?)
+    // }
 
     #[tracing::instrument]
     pub(crate) async fn get_default_branch(&self, repo_id: i64) -> anyhow::Result<String> {
         let crab = self.get_crab(repo_id).await?;
         let (owner, name) = self.get_owner_and_name(repo_id).await?;
-        let repository = crab.repos(owner, name).get().await.unwrap();
+        let repository = crab.repos(owner, name).get().await?;
         Ok(repository.default_branch.unwrap())
     }
 
@@ -96,24 +78,16 @@ impl Github {
         &self,
         repo_id: i64,
         branch: &str,
-    ) -> anyhow::Result<Option<Commit>> {
+    ) -> anyhow::Result<Commit> {
         let crab = self.get_crab(repo_id).await?;
         let (owner, name) = self.get_owner_and_name(repo_id).await?;
-        Ok(Self::get_latest_commit_option(&crab, &owner, &name, branch).await)
-    }
-
-    #[tracing::instrument]
-    async fn get_latest_commit_option(
-        crab: &Octocrab,
-        owner: &str,
-        name: &str,
-        branch: &str,
-    ) -> Option<Commit> {
-        // let crab = self.get_crab().await;
-        // let (owner, name) = self.get_owner_and_name(repo_id).await;
-        let commit = crab.commits(owner, name).get(branch).await.ok()?;
-        let timestamp = commit.commit.committer?.date?.timestamp_millis();
-        Some(Commit {
+        let commit = crab.commits(owner, name).get(branch).await?;
+        let timestamp = commit
+            .commit
+            .committer
+            .and_then(|commiter| commiter.date.map(|date| date.timestamp_millis()))
+            .unwrap_or(now()); // FIXME: if Im using this timestamp just for the UI, better have a None here, on the other hand if I'm using this for ordering, this might be dangerous
+        Ok(Commit {
             timestamp,
             sha: commit.sha,
         })
@@ -262,7 +236,8 @@ impl Github {
     // TODO: make this receive crab as argument
     #[tracing::instrument]
     async fn get_owner_and_name(&self, id: i64) -> anyhow::Result<(String, String)> {
-        let repo = self.get_repo(id).await?.unwrap();
+        let repo = self.get_repo(id).await?;
+        let repo = repo.ok_or_else(|| anyhow!("Repo not found"))?;
         Ok((repo.owner.unwrap().login, repo.name))
     }
 
@@ -282,7 +257,10 @@ impl Github {
         match token {
             Some(token) if !is_token_too_old(token) => Ok(token.secret.clone()),
             _ => {
-                let token = get_installation_access_token(repo_id).await?;
+                let token = Token {
+                    secret: provider::get_github_token(repo_id).await?,
+                    millis: now(),
+                };
                 tokens.insert(repo_id.to_owned(), token.clone());
                 Ok(token.secret)
             }
@@ -293,24 +271,4 @@ impl Github {
 fn is_token_too_old(token: &Token) -> bool {
     let age = now() - token.millis;
     age > 30 * 60 * 1000
-}
-
-#[tracing::instrument]
-async fn get_installation_access_token(repo: i64) -> anyhow::Result<Token> {
-    let Conf {
-        provider,
-        secret,
-        hostname,
-    } = Conf::read();
-
-    let client = reqwest::Client::new();
-    let url = format!("{provider}/api/instance/token/{hostname}/{repo}");
-    info!("requesting Github installation token from {url}");
-    let response = client.get(url).bearer_auth(secret).send().await?;
-    ensure!(response.status() == StatusCode::OK);
-    let secret = response.text().await?;
-    Ok(Token {
-        secret,
-        millis: now(),
-    })
 }

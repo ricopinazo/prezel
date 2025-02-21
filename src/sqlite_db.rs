@@ -10,7 +10,7 @@ use serde::Serialize;
 
 use crate::{
     container::{sqld::SqldContainer, Container},
-    db::NanoId,
+    db::nano_id::NanoId,
     deployments::worker::WorkerHandle,
     paths::HostFile,
 };

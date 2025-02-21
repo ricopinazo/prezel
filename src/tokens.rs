@@ -2,9 +2,10 @@ use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, 
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "lowercase")]
 pub(crate) enum Role {
-    admin,
-    user,
+    Admin,
+    User,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

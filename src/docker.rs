@@ -25,7 +25,7 @@ use std::{
 };
 use utoipa::ToSchema;
 
-use crate::{alphabet, env::EnvVars, paths::HostFile};
+use crate::{env::EnvVars, paths::HostFile, utils::LOWERCASE_PLUS_NUMBERS};
 
 #[tracing::instrument]
 pub(crate) fn docker_client() -> Docker {
@@ -179,7 +179,7 @@ pub(crate) async fn create_container_with_explicit_binds(
     let cmd = command.map(|command| vec![command]);
     let docker = docker_client();
 
-    let id = nanoid!(21, &alphabet::LOWERCASE_PLUS_NUMBERS);
+    let id = nanoid!(21, &LOWERCASE_PLUS_NUMBERS);
     let name = format!("{CONTAINER_PREFIX}{id}",);
     let response = docker
         .create_container::<String, _>(
