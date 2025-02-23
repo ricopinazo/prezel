@@ -2,7 +2,7 @@ use anyhow::anyhow;
 use flate2::read::GzDecoder;
 use http_body_util::BodyExt;
 use octocrab::{
-    models::{pulls::PullRequest, IssueState, Repository},
+    models::{issues::Comment, pulls::PullRequest, CommentId, IssueState, Repository},
     params::{
         checks::{CheckRunConclusion, CheckRunStatus},
         repos::Commitish,
@@ -11,12 +11,9 @@ use octocrab::{
 };
 use std::{collections::HashMap, io::Cursor, path::Path, sync::Arc};
 use tar::Archive;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, MutexGuard, RwLock};
 
 use crate::{provider, utils::now};
-
-const CHECK_NAME: &str = "prezel";
-const COMMENT_START: &'static str = "[prezel]: authored";
 
 pub(crate) struct Commit {
     pub(crate) timestamp: i64,
@@ -32,12 +29,14 @@ struct Token {
 #[derive(Clone, Debug)]
 pub(crate) struct Github {
     tokens: Arc<RwLock<HashMap<i64, Token>>>,
+    bot_mutex: Arc<Mutex<()>>,
 }
 
 impl Github {
     pub(crate) async fn new() -> Self {
         Self {
             tokens: Default::default(),
+            bot_mutex: Mutex::new(()).into(),
         }
     }
 
@@ -142,97 +141,6 @@ impl Github {
         decoded.ok_or(anyhow!("invalid content"))
     }
 
-    #[tracing::instrument]
-    pub(crate) async fn upsert_pull_check(
-        &self,
-        repo_id: i64,
-        sha: &str,
-        status: CheckRunStatus,
-        conclusion: Option<CheckRunConclusion>,
-    ) -> anyhow::Result<()> {
-        let crab = self.get_crab(repo_id).await?;
-        let (owner, name) = self.get_owner_and_name(repo_id).await?;
-        let check_handler = crab.checks(owner, name);
-        let checks = check_handler
-            .list_check_runs_for_git_ref(Commitish(sha.into()))
-            .send()
-            .await
-            .unwrap();
-
-        let app_check = checks
-            .check_runs
-            .iter()
-            .find(|check| check.name == CHECK_NAME);
-
-        match app_check {
-            Some(check) => {
-                println!("updating check run for {sha}");
-                let mut builder = check_handler.update_check_run(check.id).status(status);
-                if let Some(conclusion) = conclusion {
-                    builder = builder.conclusion(conclusion);
-                }
-                builder.send().await.unwrap();
-            }
-            None => {
-                println!("creating check run for {sha}");
-                let mut builder = check_handler
-                    .create_check_run(CHECK_NAME, sha)
-                    // .details_url(details_url) // TODO: add this -> have a look at the vercel details URL
-                    .status(status);
-
-                if let Some(conclusion) = conclusion {
-                    builder = builder.conclusion(conclusion);
-                }
-                builder.send().await.unwrap();
-            }
-        }
-        Ok(())
-    }
-
-    #[tracing::instrument]
-    pub(crate) async fn upsert_pull_comment(
-        &self,
-        repo_id: i64,
-        content: &str,
-        pull: u64,
-    ) -> anyhow::Result<()> {
-        let crab = self.get_crab(repo_id).await?;
-        let (owner, name) = self.get_owner_and_name(repo_id).await?;
-        // let app: octocrab::models::App = crab.get("/app", None::<&()>).await.unwrap();
-        // let app_slug = app.slug.unwrap();
-        // let app_name_in_comments = format!("{app_slug}[bot]"); // TODO: maybe there is another field in the comments that is not user.login
-
-        println!("adding comment to pull {pull}");
-        let comments = crab
-            .issues(&owner, &name)
-            .list_comments(pull)
-            .send()
-            .await
-            .unwrap();
-
-        // TODO: put the app name in a shared constant
-        let app_comment = comments.items.iter().find(|comment| {
-            let body = comment.body.as_ref();
-            body.is_some_and(|body| body.starts_with(COMMENT_START))
-        });
-
-        let content = format!("{COMMENT_START}\n{content}");
-        if let Some(comment) = app_comment {
-            println!("updating comment for pull {pull}");
-            crab.issues(owner, name)
-                .update_comment(comment.id, content)
-                .await
-                .unwrap();
-        } else {
-            println!("creating comment for pull {pull}");
-            crab.issues(owner, name)
-                .create_comment(pull, content)
-                .await
-                .unwrap();
-        }
-        Ok(())
-    }
-
     // TODO: make this receive crab as argument
     #[tracing::instrument]
     async fn get_owner_and_name(&self, id: i64) -> anyhow::Result<(String, String)> {
@@ -265,6 +173,118 @@ impl Github {
                 Ok(token.secret)
             }
         }
+    }
+
+    pub(crate) async fn allocate_bot(&self) -> GithubBot {
+        GithubBot {
+            github: self.clone(),
+            guard: self.bot_mutex.lock().await,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct GithubBot<'a> {
+    github: Github,
+    guard: MutexGuard<'a, ()>,
+}
+
+impl<'a> GithubBot<'a> {
+    #[tracing::instrument]
+    pub(crate) async fn upsert_pull_check(
+        &self,
+        repo_id: i64,
+        sha: &str,
+        check_name: &str,
+        status: CheckRunStatus,
+        conclusion: Option<CheckRunConclusion>,
+    ) -> anyhow::Result<()> {
+        let crab = self.github.get_crab(repo_id).await?;
+        let (owner, name) = self.github.get_owner_and_name(repo_id).await?;
+        let check_handler = crab.checks(owner, name);
+        let checks = check_handler
+            .list_check_runs_for_git_ref(Commitish(sha.into()))
+            .send()
+            .await
+            .unwrap();
+
+        let app_check = checks
+            .check_runs
+            .iter()
+            .find(|check| check.name == check_name);
+
+        match app_check {
+            Some(check) => {
+                let mut builder = check_handler.update_check_run(check.id).status(status);
+                if let Some(conclusion) = conclusion {
+                    builder = builder.conclusion(conclusion);
+                }
+                builder.send().await.unwrap();
+            }
+            None => {
+                let mut builder = check_handler
+                    .create_check_run(check_name, sha)
+                    // .details_url(details_url) // TODO: add this -> have a look at the vercel details URL
+                    .status(status);
+
+                if let Some(conclusion) = conclusion {
+                    builder = builder.conclusion(conclusion);
+                }
+                builder.send().await.unwrap();
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn read_pull_comment_with_prefix(
+        &self,
+        repo_id: i64,
+        pull: u64,
+        prefix: &str,
+    ) -> anyhow::Result<Option<Comment>> {
+        let crab = self.github.get_crab(repo_id).await?;
+        let (owner, name) = self.github.get_owner_and_name(repo_id).await?;
+        let comments = crab
+            .issues(&owner, &name)
+            .list_comments(pull)
+            .send()
+            .await?;
+        let comment = comments.items.into_iter().find(|comment| {
+            let body = comment.body.as_ref();
+            body.is_some_and(|body| body.starts_with(prefix))
+        });
+        Ok(comment)
+    }
+
+    #[tracing::instrument]
+    pub(crate) async fn create_pull_comment(
+        &self,
+        repo_id: i64,
+        pull: u64,
+        content: &str,
+    ) -> anyhow::Result<()> {
+        let crab = self.github.get_crab(repo_id).await?;
+        let (owner, name) = self.github.get_owner_and_name(repo_id).await?;
+        crab.issues(owner, name)
+            .create_comment(pull, content)
+            .await?;
+        Ok(())
+    }
+
+    #[tracing::instrument]
+    pub(crate) async fn update_pull_comment(
+        &self,
+        repo_id: i64,
+        pull: u64,
+        comment: CommentId,
+        content: &str,
+    ) -> anyhow::Result<()> {
+        let crab = self.github.get_crab(repo_id).await?;
+        let (owner, name) = self.github.get_owner_and_name(repo_id).await?;
+        crab.issues(owner, name)
+            .update_comment(comment, content)
+            .await?;
+        Ok(())
     }
 }
 

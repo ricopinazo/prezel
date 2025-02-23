@@ -1,5 +1,5 @@
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -13,8 +13,7 @@ pub(crate) struct TokenClaims {
     pub(crate) role: Role,
 }
 
-// TODO: remove this?
-pub(crate) fn generate_token(claims: TokenClaims, secret: &str) -> String {
+pub(crate) fn generate_token<T: Serialize>(claims: T, secret: &str) -> String {
     encode(
         &Header::default(),
         &claims,
@@ -23,7 +22,16 @@ pub(crate) fn generate_token(claims: TokenClaims, secret: &str) -> String {
     .expect("Failed to encode claims")
 }
 
-pub(crate) fn decode_token(token: &str, secret: &str) -> anyhow::Result<TokenClaims> {
+pub(crate) fn decode_token<T: DeserializeOwned>(token: &str, secret: &str) -> anyhow::Result<T> {
+    let decoded = decode::<T>(
+        token,
+        &DecodingKey::from_secret(secret.as_ref()),
+        &Validation::new(Algorithm::HS256),
+    )?;
+    Ok(decoded.claims)
+}
+
+pub(crate) fn decode_auth_token(token: &str, secret: &str) -> anyhow::Result<TokenClaims> {
     let result = decode::<TokenClaims>(
         token,
         &DecodingKey::from_secret(secret.as_ref()),

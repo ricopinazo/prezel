@@ -6,7 +6,7 @@ use actix_web::{
 };
 use actix_web_httpauth::headers::authorization::{Authorization, Bearer};
 
-use crate::tokens::{decode_token, Role, TokenClaims};
+use crate::tokens::{decode_auth_token, Role, TokenClaims};
 
 use super::AppState;
 
@@ -29,7 +29,7 @@ impl AnyRole {
                 let token = scheme.token();
                 // TODO: get secret from app state, which can be accessed from the req object
                 let data = req.app_data::<Data<AppState>>().unwrap();
-                let claims = decode_token(token, &data.secret)
+                let claims = decode_auth_token(token, &data.secret)
                     .map_err(|_error| ErrorUnauthorized("invalid token"))?;
                 Ok(Self(claims))
             })

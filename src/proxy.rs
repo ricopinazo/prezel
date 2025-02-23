@@ -24,7 +24,7 @@ use crate::deployments::manager::Manager;
 use crate::listener::{Access, Listener};
 use crate::logging::{Level, RequestLog, RequestLogger};
 use crate::tls::{CertificateStore, TlsState};
-use crate::tokens::decode_token;
+use crate::tokens::decode_auth_token;
 use crate::utils::now;
 
 struct ApiListener;
@@ -93,7 +93,7 @@ impl ProxyApp {
                     .filter_map(|cookie| cookie.ok())
                     .find(|cookie| {
                         cookie.name() == hostname
-                            && decode_token(cookie.value(), &self.config.secret).is_ok()
+                            && decode_auth_token(cookie.value(), &self.config.secret).is_ok()
                         // TODO: make sure I validate any future exp field etc
                     })
             })
