@@ -2,7 +2,7 @@ use anyhow::ensure;
 use http::Method;
 use reqwest::Response;
 
-use crate::Conf;
+use crate::conf::Conf;
 
 pub(crate) async fn get_team_name() -> anyhow::Result<String> {
     let conf = Conf::read_async().await;

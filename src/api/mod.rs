@@ -266,7 +266,7 @@ impl From<CrabRepository> for Repository {
 struct ProjectInfo {
     name: String,
     id: String,
-    repo: Option<Repository>,
+    repo: i64,
     created: i64,
     custom_domains: Vec<String>,
     prod_deployment_id: Option<String>,
@@ -277,7 +277,7 @@ struct ProjectInfo {
 struct FullProjectInfo {
     name: String,
     id: String,
-    repo: Option<Repository>,
+    repo: i64,
     created: i64,
     custom_domains: Vec<String>,
     prod_deployment_id: Option<String>,

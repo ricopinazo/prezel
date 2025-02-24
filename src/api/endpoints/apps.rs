@@ -33,11 +33,10 @@ async fn get_projects(auth: AnyRole, state: Data<AppState>) -> impl Responder {
         async move {
             let prod_deployment = get_prod_deployment(&state, &project.id).await;
             let prod_deployment_id = get_prod_deployment_id(&state.db, &project).await;
-            let repo = state.github.get_repo(project.repo_id).await.ok().flatten();
             ProjectInfo {
                 name: project.name.clone(),
                 id: project.id.to_string(),
-                repo: repo.map(|repo| repo.into()),
+                repo: project.repo_id,
                 created: project.created,
                 custom_domains: project.custom_domains,
                 prod_deployment_id: prod_deployment_id.into_opt_string(),
@@ -66,15 +65,13 @@ async fn get_project(auth: AnyRole, state: Data<AppState>, name: Path<String>) -
     let project = state.db.get_project_by_name(&name).await;
     match project {
         Some(project) => {
-            let repo = state.github.get_repo(project.repo_id).await.ok().flatten();
             let prod_deployment_id = get_prod_deployment_id(&state.db, &project).await;
             let prod_deployment = get_prod_deployment(&state, &project.id).await;
             let deployments = get_all_deployments(&state, &project.id).await;
-
             HttpResponse::Ok().json(FullProjectInfo {
                 name: project.name,
                 id: project.id.into(),
-                repo: repo.map(|repo| repo.into()),
+                repo: project.repo_id,
                 created: project.created,
                 custom_domains: project.custom_domains,
                 prod_deployment_id: prod_deployment_id.into_opt_string(),
