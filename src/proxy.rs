@@ -205,6 +205,12 @@ impl ProxyHttp for ProxyApp {
             upstream_response
                 .insert_header(header::ACCESS_CONTROL_ALLOW_ORIGIN, &self.config.provider)
                 .unwrap();
+            upstream_response
+                .insert_header(
+                    header::ACCESS_CONTROL_ALLOW_CREDENTIALS,
+                    &self.config.provider,
+                )
+                .unwrap();
         }
         Ok(())
     }
