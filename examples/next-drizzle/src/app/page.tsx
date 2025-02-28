@@ -5,35 +5,26 @@ import { revalidatePath } from "next/cache";
 import Image from "next/image";
 
 async function getClapCount() {
-  try {
-    const { count } = (await db().query.claps.findFirst({
-      where: eq(claps?.id, 0),
-    })) ?? { count: 0 };
-    return count;
-  } catch (error) {
-    console.error(error);
-    return undefined;
-  }
+  return await db.query.claps
+    .findFirst({ where: eq(claps.id, 0) })
+    .then((row) => row?.count ?? 0);
 }
 
 async function incrementClaps() {
   "use server";
   const current = await getClapCount();
-  if (current !== undefined) {
-    await db()
-      .insert(claps)
-      .values({ id: 0, count: current + 1 })
-      .onConflictDoUpdate({
-        target: claps.id,
-        set: { count: current + 1 },
-      });
-    revalidatePath("/");
-  }
+  await db
+    .insert(claps)
+    .values({ id: 0, count: current + 1 })
+    .onConflictDoUpdate({
+      target: claps.id,
+      set: { count: current + 1 },
+    });
+  revalidatePath("/");
 }
 
 export default async function Home() {
   const clapCount = await getClapCount();
-
   return (
     <div className="grid min-h-screen grid-rows-[20px_1fr_20px] items-center justify-items-center gap-16 p-8 pb-20 font-[family-name:var(--font-geist-sans)] sm:p-20">
       <main className="row-start-2 flex flex-col items-center gap-8">

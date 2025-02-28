@@ -6,5 +6,6 @@ export default defineConfig({
   dialect: "sqlite",
   dbCredentials: {
     url: process.env.PREZEL_DB_URL!,
+    token: process.env.PREZEL_DB_AUTH_TOKEN,
   },
 });
