@@ -25,8 +25,6 @@ use super::{
     ContainerStatus, DeploymentHooks, WorkerHandle,
 };
 
-const DB_PATH_ENV_NAME: &str = "PREZEL_DB_URL";
-
 #[derive(Clone, Debug)]
 pub(crate) struct CommitContainer {
     github: Github,
@@ -40,6 +38,7 @@ pub(crate) struct CommitContainer {
 }
 
 impl CommitContainer {
+    #[tracing::instrument]
     pub(crate) fn new(
         build_queue: WorkerHandle,
         hooks: StatusHooks,
@@ -52,22 +51,23 @@ impl CommitContainer {
         branch: bool,
         public: bool, // TODO: should not this be in ContainerConfig
         prod_db: &ProdSqliteDb,
+        db_url: &str,
         // cloned_db_file: Option<HostFile>,
         initial_status: ContainerStatus,
         result: Option<BuildResult>,
     ) -> Container {
-        let (db_file, branch_db) = if branch {
+        let (branch_db, token) = if branch {
             let branch_db = prod_db.branch(&deployment);
-            (branch_db.branch_file.clone(), Some(branch_db))
+            let token = branch_db.auth.token.clone();
+            (Some(branch_db), token)
         } else {
-            (prod_db.setup.file.clone(), None)
+            (None, prod_db.setup.auth.token.clone())
         };
-        let db_path = db_file.get_container_file();
-        let db_path_str = db_path.to_str().unwrap();
-        let db_url = format!("file:{db_path_str}");
         let default_env = [
-            (DB_PATH_ENV_NAME, db_url.as_str()),
-            ("ASTRO_DB_REMOTE_URL", db_url.as_str()),
+            ("PREZEL_DB_URL", db_url),
+            ("PREZEL_DB_AUTH_TOKEN", &token),
+            ("ASTRO_DB_REMOTE_URL", db_url),
+            ("ASTRO_DB_APP_TOKEN", &token),
             ("HOST", "0.0.0.0"),
             ("PORT", "80"),
         ]
@@ -88,7 +88,7 @@ impl CommitContainer {
         Container::new(
             builder,
             ContainerConfig {
-                host_files: vec![db_file],
+                host_folders: vec![],
                 env: extended_env,
                 pull: false,
                 initial_status,
@@ -135,6 +135,7 @@ impl CommitContainer {
         }
     }
 
+    #[tracing::instrument]
     async fn build_context(&self, path: &Path) -> anyhow::Result<PathBuf> {
         self.github
             .download_commit(self.repo_id, &self.sha, &path)
@@ -150,6 +151,7 @@ impl CommitContainer {
         Ok(inner_path)
     }
 
+    #[tracing::instrument]
     async fn create_dockerfile_with_nixpacks(&self, inner_path: &Path) -> anyhow::Result<()> {
         let env_vec: Vec<String> = self.env.clone().into();
         create_docker_image(

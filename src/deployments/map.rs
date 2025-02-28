@@ -239,13 +239,10 @@ impl DeploymentMap {
         //     .collect()
         //     .await;
 
-        // force build and start for prod containers
+        // force build prod containers
         for deployment in self.iter_prod_deployments() {
             let status = deployment.app_container.status.read().await.clone();
             match status {
-                ContainerStatus::StandBy { .. } => {
-                    deployment.app_container.start().await;
-                }
                 // the logic to put containers into the queue is a bit duplicated.
                 // Maybe everything related to putting containers into the Queue should be here,
                 // but that means I need an additional status

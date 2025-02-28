@@ -95,6 +95,7 @@ impl Manager {
 
     #[tracing::instrument]
     pub(crate) async fn get_container_by_hostname(&self, hostname: &str) -> Option<Arc<Container>> {
+        println!("trying to access container for hostname {hostname}");
         let container = self
             .deployments
             .read()

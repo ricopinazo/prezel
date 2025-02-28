@@ -142,21 +142,24 @@ impl DeploymentWithProject {
         .plus_https()
     }
 
-    pub(crate) fn get_branch_sqlite_base_url(&self, box_domain: &str) -> String {
-        Label::BranchDb {
-            project: self.project.name.clone(),
-            deployment: self.url_id.clone(),
+    // FIXME: this choice between prod or branch is disconnected from similar choices in other parts
+    // such as in the api where we get the token from the prod db or the branch db
+    // or in commit.rs where we do the same
+    pub(crate) fn get_libsql_url(&self, box_domain: &str) -> String {
+        if self.default_branch == 1 {
+            Label::ProdDb {
+                project: self.project.name.clone(),
+            }
+            .format_hostname(box_domain)
+            .plus_https()
+        } else {
+            Label::BranchDb {
+                project: self.project.name.clone(),
+                deployment: self.url_id.clone(),
+            }
+            .format_hostname(box_domain)
+            .plus_https()
         }
-        .format_hostname(box_domain)
-        .plus_https()
-    }
-
-    pub(crate) fn get_prod_sqlite_base_url(&self, box_domain: &str) -> String {
-        Label::ProdDb {
-            project: self.project.name.clone(),
-        }
-        .format_hostname(box_domain)
-        .plus_https()
     }
 }
 

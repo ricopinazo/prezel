@@ -25,7 +25,7 @@ use std::{
 };
 use utoipa::ToSchema;
 
-use crate::{env::EnvVars, paths::HostFile, utils::LOWERCASE_PLUS_NUMBERS};
+use crate::{env::EnvVars, paths::HostFolder, utils::LOWERCASE_PLUS_NUMBERS};
 
 #[tracing::instrument]
 pub(crate) fn docker_client() -> Docker {
@@ -151,16 +151,16 @@ pub(crate) async fn pull_image(image: &str) {
         .await;
 }
 
-pub(crate) async fn create_container<'a, I: Iterator<Item = &'a HostFile>>(
+pub(crate) async fn create_container<'a, I: Iterator<Item = &'a HostFolder>>(
     image: String,
     env: EnvVars,
-    host_files: I,
+    host_folders: I,
     command: Option<String>,
 ) -> anyhow::Result<String> {
-    let binds = host_files
+    let binds = host_folders
         .map(|file| {
-            let host = file.get_host_folder().to_str().unwrap().to_owned();
-            let container = file.get_container_folder().to_str().unwrap().to_owned();
+            let host = file.get_host_path().to_str().unwrap().to_owned();
+            let container = file.get_container_path().to_str().unwrap().to_owned();
             format!("{host}:{container}")
         })
         .collect();

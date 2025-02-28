@@ -3414,6 +3414,7 @@ dependencies = [
  "utoipa",
  "utoipa-rapidoc",
  "uuid",
+ "walkdir",
 ]
 
 [[package]]

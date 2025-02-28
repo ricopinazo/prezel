@@ -174,16 +174,17 @@ impl ApiDeployment {
 
                 let app_container = deployment.app_container.get_container_id().await;
 
+                let db_url = db_deployment.get_libsql_url(box_domain);
                 let libsql_db = if is_prod {
                     let prod_db = manager.get_prod_db(&deployment.project).await;
                     prod_db.map(|setup| LibsqlDb {
-                        url: db_deployment.get_prod_sqlite_base_url(box_domain),
+                        url: db_url,
                         token: setup.auth.token,
                     })
                 } else {
                     let branch_db = container_status.get_db_setup();
                     branch_db.map(|setup| LibsqlDb {
-                        url: db_deployment.get_branch_sqlite_base_url(box_domain),
+                        url: db_url,
                         token: setup.auth.token.clone(),
                     })
                 };

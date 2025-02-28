@@ -16,35 +16,23 @@ pub(crate) fn get_instance_log_dir() -> PathBuf {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct HostFile {
-    relative_folder_path: PathBuf,
-    filename: String,
+pub(crate) struct HostFolder {
+    relative_path: PathBuf,
 }
 
-impl HostFile {
-    pub(crate) fn new(relative_folder_path: PathBuf, filename: impl AsRef<str>) -> Self {
+impl HostFolder {
+    pub(crate) fn new(relative_path: PathBuf) -> Self {
         // TODO: panic if relative_folder_path is not relative
-        Self {
-            relative_folder_path,
-            filename: filename.as_ref().to_owned(),
-        }
+        Self { relative_path }
     }
-    pub(crate) fn get_host_folder(&self) -> PathBuf {
-        get_host_root().join(&self.relative_folder_path)
+    pub(crate) fn get_host_path(&self) -> PathBuf {
+        get_host_root().join(&self.relative_path)
     }
 
-    // pub(crate) fn get_host_file(&self) -> PathBuf {
-    //     self.get_host_folder().join(&self.filename)
-    // }
-
-    pub(crate) fn get_container_folder(&self) -> PathBuf {
-        let path = get_container_root().join(&self.relative_folder_path);
+    pub(crate) fn get_container_path(&self) -> PathBuf {
+        let path = get_container_root().join(&self.relative_path);
         create_dir_all(&path).unwrap(); // TODO: is this good enough?
         path
-    }
-
-    pub(crate) fn get_container_file(&self) -> PathBuf {
-        self.get_container_folder().join(&self.filename)
     }
 }
 

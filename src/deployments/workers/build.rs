@@ -30,6 +30,8 @@ impl Worker for BuildWorker {
             loop {
                 if let Some(container) = self.get_container_to_build().await {
                     container.setup_as_standby().await;
+
+                    // we call this because the container we just built might be promoted to be the prod one
                     self.map
                         .write()
                         .await

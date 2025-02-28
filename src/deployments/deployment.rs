@@ -11,6 +11,7 @@ use crate::container::ContainerStatus;
 use crate::db::{nano_id::NanoId, BuildResult, Deployment as DbDeployment};
 use crate::hooks::StatusHooks;
 use crate::sqlite_db::ProdSqliteDb;
+use crate::Conf;
 use crate::{
     container::Container,
     db::{Db, DeploymentWithProject},
@@ -90,6 +91,8 @@ impl Deployment {
         db: Db,
         project_db: &ProdSqliteDb,
     ) -> Self {
+        let Conf { hostname, .. } = Conf::read_async().await; // TODO: take this from args?
+        let db_url = deployment.get_libsql_url(&hostname);
         let DeploymentWithProject {
             deployment,
             project,
@@ -142,6 +145,7 @@ impl Deployment {
             is_branch_deployment,
             is_public,
             project_db,
+            &db_url,
             inistial_status,
             build_result,
         );

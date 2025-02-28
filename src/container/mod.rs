@@ -1,8 +1,9 @@
 use anyhow::{anyhow, bail};
 use async_trait::async_trait;
+use futures::{stream, StreamExt};
 use std::{
     fmt,
-    future::Future,
+    future::{self, Future},
     net::SocketAddrV4,
     ops::Deref,
     pin::Pin,
@@ -23,8 +24,9 @@ use crate::{
     env::EnvVars,
     hooks::DeploymentHooks,
     listener::{Access, Listener},
-    paths::HostFile,
+    paths::HostFolder,
     sqlite_db::SqliteDbSetup,
+    utils::now,
 };
 
 pub(crate) mod commit;
@@ -34,8 +36,8 @@ pub(crate) mod sqld;
 pub(crate) struct ContainerConfig {
     pub(crate) env: EnvVars,
     pub(crate) pull: bool,
-    pub(crate) host_files: Vec<HostFile>,
-    pub(crate) command: Option<String>,
+    pub(crate) host_folders: Vec<HostFolder>,
+    pub(crate) command: Option<String>, // TODO: review if I am using this
     pub(crate) initial_status: ContainerStatus,
     pub(crate) result: Option<BuildResult>,
 }
@@ -75,6 +77,10 @@ pub(crate) enum ContainerStatus {
         image: String,
         db_setup: Option<SqliteDbSetup>,
     },
+    Starting {
+        image: String,
+        db_setup: Option<SqliteDbSetup>,
+    },
     Ready {
         image: String,
         db_setup: Option<SqliteDbSetup>,
@@ -86,6 +92,7 @@ pub(crate) enum ContainerStatus {
 }
 
 impl ContainerStatus {
+    #[tracing::instrument]
     fn get_container_id(&self) -> Option<String> {
         if let Self::Ready { container, .. } = self {
             Some(container.clone())
@@ -94,10 +101,11 @@ impl ContainerStatus {
         }
     }
 
+    #[tracing::instrument]
     pub(crate) fn to_status(&self) -> Status {
         match self {
             Self::Built => Status::Built,
-            Self::StandBy { .. } => Status::StandBy,
+            Self::StandBy { .. } | Self::Starting { .. } => Status::StandBy, // not relevant for the user?
             Self::Building => Status::Building,
             Self::Queued { .. } => Status::Queued,
             Self::Ready { .. } => Status::Ready,
@@ -110,8 +118,9 @@ impl ContainerStatus {
     #[tracing::instrument]
     pub(crate) fn get_db_setup(&self) -> Option<SqliteDbSetup> {
         match self {
-            Self::StandBy { db_setup, .. } => db_setup.clone(),
-            Self::Ready { db_setup, .. } => db_setup.clone(),
+            Self::StandBy { db_setup, .. }
+            | Self::Ready { db_setup, .. }
+            | Self::Starting { db_setup, .. } => db_setup.clone(),
             Self::Queued { .. } | Self::Building | Self::Built | Self::Failed => None,
         }
     }
@@ -232,6 +241,7 @@ impl Container {
             }
             Err(error) => {
                 error!("{}", error);
+                self.hooks.on_build_log(&error.to_string(), true).await;
                 self.hooks.on_build_failed().await;
                 *self.status.write().await = ContainerStatus::Failed;
                 *self.result.write().await = Some(BuildResult::Failed);
@@ -242,15 +252,31 @@ impl Container {
 
     #[tracing::instrument]
     pub(crate) async fn start(&self) -> anyhow::Result<SocketAddrV4> {
-        let cloned_status = self.status.read().await.clone();
-        if let ContainerStatus::StandBy { image, db_setup } = cloned_status {
+        let (owned_start, image, db_setup) = {
+            let mut current = self.status.write().await;
+            if let ContainerStatus::StandBy { image, db_setup } = current.clone() {
+                *current = ContainerStatus::Starting {
+                    image: image.clone(),
+                    db_setup: db_setup.clone(),
+                };
+                (true, image, db_setup)
+            } else if let ContainerStatus::Starting { image, db_setup } = current.deref() {
+                (false, image.clone(), db_setup.clone())
+            } else if let ContainerStatus::Ready { socket, .. } = current.deref() {
+                return Ok(socket.clone());
+            } else {
+                bail!("Tried to start container in a state different than StandBy or Starting")
+            }
+        };
+
+        if owned_start {
             if self.config.pull {
                 pull_image(&image).await;
             }
             let container = create_container(
                 image.clone(),
                 self.config.env.clone(),
-                self.config.host_files.iter(),
+                self.config.host_folders.iter(),
                 self.config.command.clone(),
             )
             .await?;
@@ -260,13 +286,32 @@ impl Container {
                 .await
                 .ok_or(anyhow!("Could not get IP for container"))?;
             let socket = SocketAddrV4::new(ip, 80);
+            let timeout = now() + 60 * 1000; // 60 seconds
             while !is_online(&socket.to_string()).await {
+                if now() > timeout {
+                    bail!("Container start timed out");
+                }
                 sleep(Duration::from_millis(200)).await;
             }
 
-            // FIXME: this will deadlock as status has a read lock on it
-            // what im doing seems fundamentally wrong
-            // maybe I should not be able to create a read lock on a WritableStatus
+            // TODO: this is better, but doesnt compile
+            // let online = stream::iter(0..(5 * 30))
+            //     .then(|_| async {
+            //         if is_online(&socket.to_string()).await {
+            //             true
+            //         } else {
+            //             sleep(Duration::from_millis(200)).await;
+            //             false
+            //         }
+            //     })
+            //     .take_while(|online| future::ready(!online))
+            //     .collect::<Vec<_>>()
+            //     .await
+            //     .last();
+            // if online !== Some(true) {
+            //     bail!("Container start timed out");
+            // }
+
             *self.status.write().await = ContainerStatus::Ready {
                 image: image.clone(),
                 db_setup,
@@ -276,10 +321,14 @@ impl Container {
             };
 
             Ok(socket)
-        } else if let ContainerStatus::Ready { socket, .. } = cloned_status {
-            Ok(socket)
         } else {
-            bail!("Tried to start container in a state different than StandBy")
+            // FIXME: unbounded loop
+            loop {
+                if let ContainerStatus::Ready { socket, .. } = self.status.read().await.clone() {
+                    return Ok(socket);
+                }
+                sleep(Duration::from_millis(200)).await;
+            }
         }
     }
 }
@@ -290,6 +339,7 @@ impl Listener for Arc<Container> {
         self.public
     }
 
+    #[tracing::instrument]
     async fn access(&self) -> anyhow::Result<Access> {
         let socket = match self.status.read().await.deref() {
             ContainerStatus::Ready {
@@ -326,7 +376,7 @@ impl Listener for Arc<Container> {
                         *last_access.write().await = Instant::now();
                         Ok(Access::Socket(socket.clone()))
                     }
-                    ContainerStatus::StandBy { .. } => {
+                    ContainerStatus::StandBy { .. } | ContainerStatus::Starting { .. } => {
                         let socket = self.start().await?;
                         Ok(Access::Socket(socket))
                     }
@@ -351,6 +401,7 @@ impl Listener for Arc<Container> {
 
 // FIXME: this might fail, especially for some API server with no / route
 // there has to be another way
+#[tracing::instrument]
 async fn is_online(host: &str) -> bool {
     let url = format!("http://{host}");
     let response = reqwest::get(url).await;

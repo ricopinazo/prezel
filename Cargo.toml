@@ -86,6 +86,7 @@ jsonwebtoken = "9.3.0"
 ring = "0.17.8"
 actix-web-httpauth = "0.8.2"
 uuid = "1.13.1"
+walkdir = "2.5.0"
 
 
 [dev-dependencies]
