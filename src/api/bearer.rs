@@ -11,7 +11,7 @@ use crate::tokens::{decode_auth_token, Role, TokenClaims};
 use super::AppState;
 
 #[derive(Debug, Clone)]
-pub struct AnyRole(TokenClaims);
+pub struct AnyRole(pub TokenClaims);
 
 impl AnyRole {
     fn validate(req: &HttpRequest) -> Result<Self, Error> {

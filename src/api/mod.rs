@@ -11,6 +11,7 @@ use crate::{
     deployments::{deployment::Deployment, manager::Manager},
     github::Github,
     logging::{Level, Log},
+    sqlite_db::DbAccess,
     utils::PlusHttps,
 };
 
@@ -153,6 +154,7 @@ impl ApiDeployment {
         is_prod: bool,
         box_domain: &str,
         manager: &Manager,
+        access: DbAccess,
     ) -> Self {
         let (status, url, prod_url, custom_urls, app_container, libsql_db) =
             if let Some(deployment) = deployment {
@@ -179,13 +181,13 @@ impl ApiDeployment {
                     let prod_db = manager.get_prod_db(&deployment.project).await;
                     prod_db.map(|setup| LibsqlDb {
                         url: db_url,
-                        token: setup.auth.token,
+                        token: setup.auth.generate_expiring_token(access),
                     })
                 } else {
                     let branch_db = container_status.get_db_setup();
                     branch_db.map(|setup| LibsqlDb {
                         url: db_url,
-                        token: setup.auth.token.clone(),
+                        token: setup.auth.generate_expiring_token(access),
                     })
                 };
 

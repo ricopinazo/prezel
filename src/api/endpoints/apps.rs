@@ -28,10 +28,11 @@ use crate::{
 #[tracing::instrument]
 async fn get_projects(auth: AnyRole, state: Data<AppState>) -> impl Responder {
     let projects = state.db.get_projects().await;
+    let db_access = auth.0.role.get_db_access();
     let projects_with_deployments = projects.into_iter().map(|project| {
         let state = state.clone();
         async move {
-            let prod_deployment = get_prod_deployment(&state, &project.id).await;
+            let prod_deployment = get_prod_deployment(&state, &project.id, db_access).await;
             let prod_deployment_id = get_prod_deployment_id(&state.db, &project).await;
             ProjectInfo {
                 name: project.name.clone(),
@@ -63,11 +64,12 @@ async fn get_projects(auth: AnyRole, state: Data<AppState>) -> impl Responder {
 async fn get_project(auth: AnyRole, state: Data<AppState>, name: Path<String>) -> impl Responder {
     let name = name.into_inner();
     let project = state.db.get_project_by_name(&name).await;
+    let db_access = auth.0.role.get_db_access();
     match project {
         Some(project) => {
             let prod_deployment_id = get_prod_deployment_id(&state.db, &project).await;
-            let prod_deployment = get_prod_deployment(&state, &project.id).await;
-            let deployments = get_all_deployments(&state, &project.id).await;
+            let prod_deployment = get_prod_deployment(&state, &project.id, db_access).await;
+            let deployments = get_all_deployments(&state, &project.id, db_access).await;
             HttpResponse::Ok().json(FullProjectInfo {
                 name: project.name,
                 id: project.id.into(),

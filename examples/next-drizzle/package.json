@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
-    "start": "pnpm migrate && next start",
+    "build": "pnpm migrate && next build",
+    "start": "next start",
     "lint": "next lint",
     "generate": "pnpm drizzle-kit generate",
     "migrate": "pnpm drizzle-kit migrate"

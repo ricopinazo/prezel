@@ -58,10 +58,10 @@ impl CommitContainer {
     ) -> Container {
         let (branch_db, token) = if branch {
             let branch_db = prod_db.branch(&deployment);
-            let token = branch_db.auth.token.clone();
+            let token = branch_db.auth.get_permanent_token().to_owned();
             (Some(branch_db), token)
         } else {
-            (None, prod_db.setup.auth.token.clone())
+            (None, prod_db.setup.auth.get_permanent_token().to_owned())
         };
         let default_env = [
             ("PREZEL_DB_URL", db_url),

@@ -1,4 +1,5 @@
 use std::{
+    ops::Deref,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -6,8 +7,10 @@ use std::{
 use anyhow::{anyhow, bail};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use jsonwebtoken::EncodingKey;
-use ring::signature::{Ed25519KeyPair, KeyPair};
-use serde::Serialize;
+use ring::{
+    pkcs8,
+    signature::{Ed25519KeyPair, KeyPair},
+};
 use walkdir::WalkDir;
 
 use crate::{
@@ -15,6 +18,8 @@ use crate::{
     db::nano_id::NanoId,
     deployments::worker::WorkerHandle,
     paths::HostFolder,
+    tokens::Role,
+    utils::now_in_seconds,
 };
 
 #[derive(Debug)]
@@ -33,8 +38,13 @@ impl ProdSqliteDb {
         let path = project_folder.join("main");
         let folder = HostFolder::new(path);
 
-        let auth = SqldAuth::generate();
-        let container = SqldContainer::new(folder.clone(), &auth.key, build_queue.clone()).into();
+        let auth = SqldAuth::new();
+        let container = SqldContainer::new(
+            folder.clone(),
+            &auth.get_url_safe_key(),
+            build_queue.clone(),
+        )
+        .into();
 
         Ok(Self {
             setup: SqliteDbSetup {
@@ -51,7 +61,7 @@ impl ProdSqliteDb {
     pub(crate) fn branch(&self, deployment_id: &NanoId) -> BranchSqliteDb {
         let path = self.project_folder.join(deployment_id.as_str());
         let branch_folder = HostFolder::new(path);
-        let auth = SqldAuth::generate();
+        let auth = SqldAuth::new();
         BranchSqliteDb {
             base_folder: self.setup.folder.clone(),
             branch_folder,
@@ -79,7 +89,7 @@ impl BranchSqliteDb {
         .await?;
         let container = SqldContainer::new(
             self.branch_folder.clone(),
-            &self.auth.key,
+            &self.auth.get_url_safe_key(),
             self.build_queue.clone(),
         )
         .into();
@@ -98,48 +108,86 @@ pub(crate) struct SqliteDbSetup {
     pub(crate) auth: SqldAuth,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) struct SqldAuth {
-    pub(crate) token: String,
-    key: String,
+    key_pair: Arc<pkcs8::Document>,
+    permanent_token: String,
+}
+
+impl std::fmt::Debug for SqldAuth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("<hidden sqld auth>")
+    }
 }
 
 impl SqldAuth {
     #[tracing::instrument]
-    fn generate() -> Self {
-        let doc = Ed25519KeyPair::generate_pkcs8(&ring::rand::SystemRandom::new()).unwrap();
-        let encoding_key = EncodingKey::from_ed_der(doc.as_ref());
-        let pair = Ed25519KeyPair::from_pkcs8(doc.as_ref()).unwrap();
-        let key = URL_SAFE_NO_PAD.encode(pair.public_key().as_ref());
+    fn new() -> Self {
+        let key_pair = Ed25519KeyPair::generate_pkcs8(&ring::rand::SystemRandom::new()).unwrap();
+        let permanent_token = generate_token(&key_pair, DbAccess::Rw, false);
+        Self {
+            key_pair: key_pair.into(),
+            permanent_token,
+        }
+    }
 
-        let token = Token {
-            id: None,
-            a: None,
-            p: None,
-            exp: None,
-        };
-        let token = encode(&token, &encoding_key);
+    #[tracing::instrument]
+    fn get_url_safe_key(&self) -> String {
+        let key_pair = self.key_pair.deref();
+        let pair = Ed25519KeyPair::from_pkcs8(key_pair.as_ref()).unwrap();
+        URL_SAFE_NO_PAD.encode(pair.public_key().as_ref())
+    }
 
-        Self { key, token }
+    #[tracing::instrument]
+    pub(crate) fn get_permanent_token(&self) -> &str {
+        &self.permanent_token
+    }
+
+    #[tracing::instrument]
+    pub(crate) fn generate_expiring_token(&self, access: DbAccess) -> String {
+        generate_token(&self.key_pair, access, true)
     }
 }
 
-// usize is not the actual type accepted by sqld. Have a look at libsql repo for more info
-#[derive(serde::Deserialize, serde::Serialize, Debug, Default)]
-pub struct Token {
-    #[serde(default)]
-    id: Option<usize>,
-    #[serde(default)]
-    a: Option<usize>,
-    #[serde(default)]
-    pub(crate) p: Option<usize>,
-    #[serde(default)]
-    exp: Option<usize>,
+fn generate_token(key_pair: &pkcs8::Document, a: DbAccess, expire: bool) -> String {
+    let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::EdDSA);
+    let encoding_key = EncodingKey::from_ed_der(key_pair.as_ref());
+    let iat = now_in_seconds();
+    let claims = Claims {
+        a,
+        iat,
+        exp: if expire {
+            Some(iat + 24 * 60 * 60)
+        } else {
+            None
+        },
+    };
+    jsonwebtoken::encode(&header, &claims, &encoding_key).unwrap()
 }
 
-fn encode<T: Serialize>(claims: &T, key: &EncodingKey) -> String {
-    let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::EdDSA);
-    jsonwebtoken::encode(&header, &claims, key).unwrap()
+impl Role {
+    pub(crate) fn get_db_access(&self) -> DbAccess {
+        match self {
+            Role::Admin => DbAccess::Rw,
+            Role::User => DbAccess::Ro,
+        }
+    }
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum DbAccess {
+    Rw,
+    Ro,
+}
+
+// for more details on this go to libsql-server/src/auth/user_auth_strategies/jwt.rs
+#[derive(serde::Deserialize, serde::Serialize, Debug)]
+pub struct Claims {
+    // id: String,
+    a: DbAccess,
+    iat: i64,         // epoch in seconds
+    exp: Option<i64>, // epoch in seconds
 }
 
 #[tracing::instrument]

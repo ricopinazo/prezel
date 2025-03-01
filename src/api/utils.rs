@@ -1,6 +1,9 @@
 use futures::{stream, StreamExt};
 
-use crate::db::{nano_id::NanoId, Db, InsertDeployment, Project};
+use crate::{
+    db::{nano_id::NanoId, Db, InsertDeployment, Project},
+    sqlite_db::DbAccess,
+};
 
 use super::{ApiDeployment, AppState};
 
@@ -19,6 +22,7 @@ pub(super) async fn get_prod_deployment_id(db: &Db, project: &Project) -> Option
 pub(super) async fn get_prod_deployment(
     AppState { db, manager, .. }: &AppState,
     project: &NanoId,
+    access: DbAccess,
 ) -> Option<ApiDeployment> {
     let box_domain = &manager.box_domain;
     let deployment = manager.get_prod_deployment(project).await?;
@@ -31,6 +35,7 @@ pub(super) async fn get_prod_deployment(
             is_prod,
             box_domain,
             &manager,
+            access,
         )
         .await,
     )
@@ -40,6 +45,7 @@ pub(super) async fn get_prod_deployment(
 pub(super) async fn get_all_deployments(
     AppState { db, manager, .. }: &AppState,
     project: &NanoId,
+    access: DbAccess,
 ) -> Vec<ApiDeployment> {
     let box_domain = &manager.box_domain;
 
@@ -60,6 +66,7 @@ pub(super) async fn get_all_deployments(
                     is_prod,
                     box_domain,
                     &manager,
+                    access,
                 )
                 .await
             })
