@@ -17,12 +17,12 @@ use crate::{
     env::EnvVars,
     github::Github,
     hooks::StatusHooks,
-    sqlite_db::{BranchSqliteDb, ProdSqliteDb},
+    sqlite_db::{BranchSqliteDb, ProdSqliteDb, SqliteDbSetup},
 };
 
 use super::{
-    build_dockerfile, BuildOutput, BuildResult, Container, ContainerConfig, ContainerSetup,
-    ContainerStatus, DeploymentHooks, WorkerHandle,
+    build_dockerfile, BuildResult, Container, ContainerConfig, ContainerSetup, ContainerStatus,
+    DeploymentHooks, WorkerHandle,
 };
 
 #[derive(Clone, Debug)]
@@ -102,22 +102,24 @@ impl CommitContainer {
         )
     }
 
-    #[tracing::instrument]
-    async fn build(&self, hooks: &Box<dyn DeploymentHooks>) -> anyhow::Result<BuildOutput> {
+    async fn setup_db(&self) -> anyhow::Result<Option<SqliteDbSetup>> {
         let db_setup = if let Some(branch_db) = &self.branch_db {
             Some(branch_db.setup().await?)
         } else {
             None
         };
+        Ok(db_setup)
+    }
 
+    #[tracing::instrument]
+    async fn build(&self, hooks: &Box<dyn DeploymentHooks>) -> anyhow::Result<String> {
         let name: ImageName = self.deployment.to_string().into();
-
         if let Some(image) = get_managed_image_id(&name).await {
             // TODO: only do this on first run?
             // if build and docker workers do not overlap, I'm safe
             // the problem might be grabbing this id at the same time the image is being removed
             // the same happens with containers
-            Ok(BuildOutput { image, db_setup })
+            Ok(image)
         } else {
             let tempdir = TempDir::new()?;
             let path = tempdir.as_ref();
@@ -130,8 +132,7 @@ impl CommitContainer {
                 }
             })
             .await?;
-
-            Ok(BuildOutput { image, db_setup })
+            Ok(image)
         }
     }
 
@@ -187,10 +188,15 @@ impl CommitContainer {
 }
 
 impl ContainerSetup for CommitContainer {
+    fn setup_db<'a>(
+        &'a self,
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<Option<SqliteDbSetup>>> + Send + 'a>> {
+        Box::pin(self.setup_db())
+    }
     fn build<'a>(
         &'a self,
         hooks: &'a Box<dyn DeploymentHooks>,
-    ) -> Pin<Box<dyn Future<Output = anyhow::Result<BuildOutput>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<String>> + Send + 'a>> {
         Box::pin(async move { self.build(hooks).await })
     }
 }

@@ -5,7 +5,7 @@ use std::{
     future::Future,
     net::SocketAddrV4,
     ops::Deref,
-    pin::Pin,
+    pin::{pin, Pin},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -45,18 +45,14 @@ pub(crate) struct ContainerConfig {
 //     Pin<Box<dyn Future<Output = anyhow::Result<PathBuf>> + Send>>;
 // pub(crate) type FileSystemOutput = Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send>>;
 
-pub(crate) struct BuildOutput {
-    image: String,
-    db_setup: Option<SqliteDbSetup>,
-}
-
 pub(crate) trait ContainerSetup: 'static + Send + Sync + fmt::Debug {
+    fn setup_db<'a>(
+        &'a self,
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<Option<SqliteDbSetup>>> + Send + 'a>>;
     fn build<'a>(
         &'a self,
         hooks: &'a Box<dyn DeploymentHooks>,
-    ) -> Pin<Box<dyn Future<Output = anyhow::Result<BuildOutput>> + Send + 'a>>;
-    // fn setup_build_context(&self, path: PathBuf) -> ContextBuilderOutput; // TODO: make this return a TempDir!!!!
-    // fn setup_filesystem(&self) -> FileSystemOutput;
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<String>> + Send + 'a>>;
 }
 
 #[derive(Debug, Clone)]
@@ -71,7 +67,9 @@ pub(crate) enum ContainerStatus {
     Queued {
         trigger_access: Option<Instant>,
     },
-    Building,
+    Building {
+        db_setup: Option<SqliteDbSetup>,
+    },
     StandBy {
         image: String,
         db_setup: Option<SqliteDbSetup>,
@@ -105,7 +103,7 @@ impl ContainerStatus {
         match self {
             Self::Built => Status::Built,
             Self::StandBy { .. } | Self::Starting { .. } => Status::StandBy, // not relevant for the user?
-            Self::Building => Status::Building,
+            Self::Building { .. } => Status::Building,
             Self::Queued { .. } => Status::Queued,
             Self::Ready { .. } => Status::Ready,
             Self::Failed => Status::Failed,
@@ -117,10 +115,11 @@ impl ContainerStatus {
     #[tracing::instrument]
     pub(crate) fn get_db_setup(&self) -> Option<SqliteDbSetup> {
         match self {
-            Self::StandBy { db_setup, .. }
+            Self::Building { db_setup }
+            | Self::StandBy { db_setup, .. }
             | Self::Ready { db_setup, .. }
             | Self::Starting { db_setup, .. } => db_setup.clone(),
-            Self::Queued { .. } | Self::Building | Self::Built | Self::Failed => None,
+            Self::Queued { .. } | Self::Built | Self::Failed => None,
         }
     }
 }
@@ -228,15 +227,21 @@ impl Container {
 
     #[tracing::instrument]
     async fn build(&self) -> anyhow::Result<()> {
+        // FIXME: I think there might be a race condition here where the container build is started twice
+        // at the same time...
         self.hooks.on_build_started().await;
 
-        *self.status.write().await = ContainerStatus::Building;
+        let db_setup = self.setup.setup_db().await?;
+
+        *self.status.write().await = ContainerStatus::Building {
+            db_setup: db_setup.clone(),
+        };
 
         match self.setup.build(&self.hooks).await {
-            Ok(BuildOutput { image, db_setup }) => {
+            Ok(image) => {
                 self.hooks.on_build_finished().await;
-                *self.status.write().await = ContainerStatus::StandBy { image, db_setup };
                 *self.result.write().await = Some(BuildResult::Built);
+                *self.status.write().await = ContainerStatus::StandBy { image, db_setup };
             }
             Err(error) => {
                 error!("{}", error);
@@ -386,7 +391,7 @@ impl Listener for Arc<Container> {
                         self.build_queue.trigger();
                         Ok(Access::Loading)
                     }
-                    ContainerStatus::Queued { .. } | ContainerStatus::Building => {
+                    ContainerStatus::Queued { .. } | ContainerStatus::Building { .. } => {
                         Ok(Access::Loading)
                     }
                     ContainerStatus::Failed => {

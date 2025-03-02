@@ -1,4 +1,7 @@
-use crate::{deployments::worker::WorkerHandle, hooks::NoopHooks, paths::HostFolder};
+use crate::{
+    deployments::worker::WorkerHandle, hooks::NoopHooks, paths::HostFolder,
+    sqlite_db::SqliteDbSetup,
+};
 
 use super::{BuildResult, Container, ContainerConfig, ContainerSetup, ContainerStatus};
 
@@ -41,12 +44,18 @@ impl SqldContainer {
 
 // FIXME: this being empty clearly means the abstraction is pointless
 impl ContainerSetup for SqldContainer {
+    fn setup_db<'a>(
+        &'a self,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = anyhow::Result<Option<SqliteDbSetup>>> + Send + 'a>,
+    > {
+        todo!()
+    }
     fn build<'a>(
         &'a self,
         _hooks: &'a Box<dyn super::DeploymentHooks>,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = anyhow::Result<super::BuildOutput>> + Send + 'a>,
-    > {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<String>> + Send + 'a>>
+    {
         todo!()
     }
 }
