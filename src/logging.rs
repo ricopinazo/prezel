@@ -15,9 +15,9 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::{
-    db::BuildLog,
+    db::{nano_id::NanoId, BuildLog},
     docker::{DockerLog, LogType},
-    paths::get_instance_log_dir,
+    paths::get_log_dir,
 };
 
 const LOG_FILE_PREFIX: &str = "log";
@@ -32,7 +32,7 @@ pub(crate) enum Level {
 pub(crate) struct RequestLog {
     pub(crate) time: i64,
     pub(crate) level: Level,
-    pub(crate) deployment: i64,
+    pub(crate) deployment: NanoId,
     pub(crate) host: String,
     pub(crate) method: String, // TODO: make enum out of this?
     pub(crate) path: String,
@@ -44,7 +44,7 @@ pub(crate) struct RequestLog {
 pub(crate) struct Log {
     pub(crate) time: i64,
     pub(crate) level: Level,
-    pub(crate) deployment: i64,
+    pub(crate) deployment: String,
     pub(crate) host: Option<String>,
     pub(crate) method: Option<String>, // TODO: make enum out of this?
     pub(crate) path: Option<String>,
@@ -53,7 +53,7 @@ pub(crate) struct Log {
 }
 
 impl Log {
-    pub(crate) fn from_docker(value: DockerLog, deployment: i64) -> Self {
+    pub(crate) fn from_docker(value: DockerLog, deployment: NanoId) -> Self {
         // TODO: try also inferring the level from the log itself
         let level = if value.log_type == LogType::Out {
             Level::INFO
@@ -64,7 +64,7 @@ impl Log {
         Self {
             level,
             time: value.time,
-            deployment,
+            deployment: deployment.into(),
             host: None,
             method: None,
             path: None,
@@ -79,7 +79,7 @@ impl From<RequestLog> for Log {
         Self {
             level: value.level,
             time: value.time,
-            deployment: value.deployment,
+            deployment: value.deployment.into(),
             host: Some(value.host),
             method: Some(value.method),
             path: Some(value.path),
@@ -100,7 +100,7 @@ impl From<BuildLog> for Log {
         Self {
             level,
             time: value.timestamp,
-            deployment: value.deployment,
+            deployment: value.deployment.into(),
             host: None,
             method: None,
             path: None,
@@ -131,7 +131,7 @@ impl RequestLogger {
         let (sender, receiver) = mpsc::channel::<RequestLog>();
 
         let join_handle = thread::spawn(move || {
-            let file_path = get_instance_log_dir().join(LOG_FILE_PREFIX);
+            let file_path = get_log_dir().join(LOG_FILE_PREFIX);
             let mut log = FileRotate::new(
                 file_path,
                 AppendTimestamp::default(FileLimit::MaxFiles(10)),
@@ -182,7 +182,7 @@ impl Iterator for EventIter {
 pub(crate) fn read_request_event_logs() -> io::Result<impl Iterator<Item = Log>> {
     // TODO: accept window
 
-    let mut paths: Vec<_> = fs::read_dir(get_instance_log_dir())?
+    let mut paths: Vec<_> = fs::read_dir(get_log_dir())?
         .filter_map(|entry| Some(entry.ok()?))
         .collect();
 

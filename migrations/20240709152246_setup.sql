@@ -1,28 +1,26 @@
 CREATE TABLE IF NOT EXISTS projects (
-    id INTEGER PRIMARY KEY NOT NULL,
+    id TEXT PRIMARY KEY NOT NULL, -- the reason to use UUIDs here and for the deployments is to avoid collisions between related resources (docker images, containers, folders, etc) from previous prezel runs on the same insatnce
     name TEXT NOT NULL UNIQUE,
-    repo_id TEXT NOT NULL,
+    repo_id INTEGER NOT NULL,
     created INTEGER NOT NULL,
-    env TEXT NOT NULL,
     root TEXT NOT NULL,
-    prod_id INTENGER -- deployment id used for prod
+    prod_id TEXT -- deployment id used for prod
 );
 
 CREATE TABLE IF NOT EXISTS deployments (
-    id INTEGER PRIMARY KEY NOT NULL,
-    url_id TEXT NOT NULL,
+    id TEXT PRIMARY KEY NOT NULL,
+    slug TEXT NOT NULL,
     timestamp INTEGER NOT NULL, -- this is the commit timestamp, used for sorting
     created INTEGER NOT NULL,
-    env TEXT NOT NULL,
     sha TEXT NOT NULL,
     branch TEXT NOT NULL,
     default_branch INTEGER NOT NULL, -- 0 false 1 true
     build_started INTEGER,
     build_finished INTEGER,
     result TEXT,
-    project INTEGER NOT NULL,
+    project TEXT NOT NULL,
     FOREIGN KEY (project) REFERENCES projects(id) ON DELETE CASCADE,
-    UNIQUE(project, url_id)
+    UNIQUE(project, slug)
 );
 
 CREATE TABLE IF NOT EXISTS build (
@@ -30,12 +28,29 @@ CREATE TABLE IF NOT EXISTS build (
     timestamp INTEGER NOT NULL,
     content TEXT NOT NULL,
     error INTEGER NOT NULL,
-    deployment INTEGER NOT NULL,
+    deployment TEXT NOT NULL,
     FOREIGN KEY (deployment) REFERENCES deployments(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS domains (
     domain TEXT PRIMARY KEY NOT NULL,
-    project INTEGER NOT NULL,
+    project TEXT NOT NULL,
     FOREIGN KEY (project) REFERENCES projects(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS env (
+    name TEXT NOT NULL,
+    value TEXT NOT NULL,
+    edited INTEGER NOT NULL,
+    project TEXT NOT NULL,
+    FOREIGN KEY (project) REFERENCES projects(id) ON DELETE CASCADE
+    PRIMARY KEY (project, name)
+);
+
+CREATE TABLE IF NOT EXISTS deployment_env (
+    name TEXT NOT NULL,
+    value TEXT NOT NULL,
+    deployment TEXT NOT NULL,
+    FOREIGN KEY (deployment) REFERENCES deployments(id) ON DELETE CASCADE
+    PRIMARY KEY (deployment, name)
 );

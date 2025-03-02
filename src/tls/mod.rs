@@ -11,7 +11,7 @@ use certificate::TlsCertificate;
 use instant_acme::{Account, ChallengeType, LetsEncrypt};
 use registration::{generate_certificate_and_persist, generate_default_certificate_and_persist};
 
-use crate::{conf::Conf, time::now_in_seconds};
+use crate::{conf::Conf, utils::now_in_seconds};
 
 mod account;
 pub(crate) mod certificate;
@@ -198,8 +198,8 @@ mod tls_tests {
 
     #[tokio::test]
     async fn test_registration() {
-        let conf = Conf::read();
-        let (account, _credentials) = create_new_account(LetsEncrypt::Staging.url()).await;
+        let _conf = Conf::read();
+        let (_account, _credentials) = create_new_account(LetsEncrypt::Staging.url()).await;
         // let certificate = generate_tls_certificate(account, &conf).await;
         // dbg!(certificate);
     }

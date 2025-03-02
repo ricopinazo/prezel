@@ -14,7 +14,7 @@ use crate::{
     github::Github,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct BuildWorker {
     // TODO: define a new function instead of having these public, same for other workers
     pub(crate) map: Arc<InstrumentedRwLock<DeploymentMap>>,
@@ -24,11 +24,14 @@ pub(crate) struct BuildWorker {
 }
 
 impl Worker for BuildWorker {
+    #[tracing::instrument]
     fn work(&self) -> impl Future<Output = ()> + Send {
         async {
             loop {
                 if let Some(container) = self.get_container_to_build().await {
                     container.setup_as_standby().await;
+
+                    // we call this because the container we just built might be promoted to be the prod one
                     self.map
                         .write()
                         .await
@@ -43,6 +46,7 @@ impl Worker for BuildWorker {
 }
 
 impl BuildWorker {
+    #[tracing::instrument]
     async fn get_container_to_build(&self) -> Option<Arc<Container>> {
         // this block helds this read guard
         let map = self.map.read().await;

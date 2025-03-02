@@ -1,16 +1,14 @@
-use http::StatusCode;
 use instant_acme::{
     Account, AuthorizationStatus, Challenge, ChallengeType, Identifier, KeyAuthorization, NewOrder,
     Order, OrderStatus,
 };
 use pingora::tls;
 use rcgen::{CertificateParams, DistinguishedName, KeyPair};
-use serde::Deserialize;
 use std::{future::Future, sync::Arc, time::Duration};
 use tokio::time::sleep;
 
 use super::certificate::{write_certificate_to_disk, TlsCertificate};
-use crate::conf::Conf;
+use crate::{conf::Conf, provider};
 
 pub(crate) async fn generate_default_certificate_and_persist(
     account: &Account,
@@ -18,7 +16,7 @@ pub(crate) async fn generate_default_certificate_and_persist(
 ) -> TlsCertificate {
     let wildcard_domain = conf.wildcard_domain();
     generate_certificate_and_persist(account, wildcard_domain, ChallengeType::Dns01, |handle| {
-        write_dns_challenge(handle, &conf)
+        write_dns_challenge(handle)
     })
     .await
 }
@@ -146,46 +144,13 @@ async fn aquire_certificate(mut order: Order, domain: String) {
     .unwrap();
 }
 
-#[derive(Deserialize)]
-struct Ready {
-    ready: bool,
-}
-
-async fn write_dns_challenge(handle: Arc<ChallengeTask>, conf: &Conf) {
-    let Conf {
-        token,
-        hostname,
-        coordinator,
-    } = conf;
-    let challenge_response = handle.get_dns_value();
-
-    // send request to the coordinator to setup DNS challenge
-    let client = reqwest::Client::new();
-    let url = format!("{coordinator}/api/instance/dns");
-    let query = client
-        .post(url)
-        .header("X-API-Key", token)
-        .header("X-Instance-ID", hostname)
-        .body(challenge_response)
-        .send();
-    let response = query.await.unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
+async fn write_dns_challenge(handle: Arc<ChallengeTask>) {
+    let response = handle.get_dns_value();
+    provider::post_challenge_response(response).await.unwrap();
 
     // wait until DNS is ready (both A and TXT record)
     loop {
-        let client = reqwest::Client::new();
-        let url = format!("{coordinator}/api/instance/dns");
-        let response = client
-            .get(url)
-            .header("X-API-Key", token)
-            .header("X-Instance-ID", hostname)
-            // .body("some body")
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        let Ready { ready } = response.json().await.unwrap();
-        if ready {
+        if provider::is_dns_ready().await.unwrap() {
             break;
         } else {
             sleep(Duration::from_secs(5)).await;

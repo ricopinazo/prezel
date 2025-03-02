@@ -1,7 +1,8 @@
-use opentelemetry::{global, trace::TracerProvider as _, KeyValue};
+use std::env;
+
+use opentelemetry::{trace::TracerProvider as _, KeyValue};
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{
-    metrics::{MeterProviderBuilder, PeriodicReader, SdkMeterProvider},
     runtime,
     trace::{RandomIdGenerator, Sampler, TracerProvider},
     Resource,
@@ -11,7 +12,7 @@ use opentelemetry_semantic_conventions::{
     SCHEMA_URL,
 };
 use tracing_core::Level;
-use tracing_opentelemetry::{MetricsLayer, OpenTelemetryLayer};
+use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 // Create a Resource that captures information about the entity for which telemetry is recorded.
@@ -27,40 +28,39 @@ fn resource() -> Resource {
 }
 
 // Construct MeterProvider for MetricsLayer
-fn init_meter_provider() -> SdkMeterProvider {
-    let exporter = opentelemetry_otlp::MetricExporter::builder()
-        .with_tonic()
-        .with_temporality(opentelemetry_sdk::metrics::Temporality::default())
-        .build()
-        .unwrap();
+// fn init_meter_provider() -> SdkMeterProvider {
+//     let exporter = opentelemetry_otlp::MetricExporter::builder()
+//         .with_tonic()
+//         .with_temporality(opentelemetry_sdk::metrics::Temporality::default())
+//         .build()
+//         .unwrap();
 
-    let reader = PeriodicReader::builder(exporter, runtime::Tokio)
-        .with_interval(std::time::Duration::from_secs(30))
-        .build();
+//     let reader = PeriodicReader::builder(exporter, runtime::Tokio)
+//         .with_interval(std::time::Duration::from_secs(30))
+//         .build();
 
-    // For debugging in development
-    let stdout_reader = PeriodicReader::builder(
-        opentelemetry_stdout::MetricExporter::default(),
-        runtime::Tokio,
-    )
-    .build();
+//     // For debugging in development
+//     let stdout_reader = PeriodicReader::builder(
+//         opentelemetry_stdout::MetricExporter::default(),
+//         runtime::Tokio,
+//     )
+//     .build();
 
-    let meter_provider = MeterProviderBuilder::default()
-        .with_resource(resource())
-        .with_reader(reader)
-        .with_reader(stdout_reader)
-        .build();
+//     let meter_provider = MeterProviderBuilder::default()
+//         .with_resource(resource())
+//         .with_reader(reader)
+//         .with_reader(stdout_reader)
+//         .build();
 
-    global::set_meter_provider(meter_provider.clone());
+//     global::set_meter_provider(meter_provider.clone());
 
-    meter_provider
-}
+//     meter_provider
+// }
 
-// Construct TracerProvider for OpenTelemetryLayer
-fn init_tracer_provider() -> TracerProvider {
+fn init_tracer_provider(address: &str) -> TracerProvider {
     let exporter = opentelemetry_otlp::SpanExporter::builder()
         .with_tonic()
-        .with_endpoint("http://jaeger:4317")
+        .with_endpoint(address)
         .build()
         .unwrap();
 
@@ -78,12 +78,7 @@ fn init_tracer_provider() -> TracerProvider {
 
 // Initialize tracing-subscriber and return OtelGuard for opentelemetry-related termination processing
 pub(crate) fn init_tracing_subscriber() -> OtelGuard {
-    let tracer_provider = init_tracer_provider();
-    let meter_provider = init_meter_provider();
-
-    let tracer = tracer_provider.tracer("tracing-otel-subscriber");
-
-    tracing_subscriber::registry()
+    let partial = tracing_subscriber::registry()
         // The global level filter prevents the exporter network stack
         // from reentering the globally installed OpenTelemetryLayer with
         // its own spans while exporting, as the libraries should not use
@@ -94,31 +89,42 @@ pub(crate) fn init_tracing_subscriber() -> OtelGuard {
         .with(tracing_subscriber::filter::LevelFilter::from_level(
             Level::INFO,
         ))
-        .with(
-            tracing_subscriber::fmt::layer(), // .with_writer(std::io::stdout)
-        )
-        .with(MetricsLayer::new(meter_provider.clone()))
-        .with(OpenTelemetryLayer::new(tracer))
-        .init();
+        .with(tracing_subscriber::fmt::layer());
 
-    OtelGuard {
-        tracer_provider,
-        meter_provider,
+    if let Ok(address) = env::var("OTEL_COLLECTOR_URL") {
+        // address will be normlly: http://jaeger:4317
+        let tracer_provider = init_tracer_provider(&address);
+        // let meter_provider = init_meter_provider();
+        let tracer = tracer_provider.tracer("tracing-otel-subscriber");
+        partial
+            .with(OpenTelemetryLayer::new(tracer))
+            // .with(MetricsLayer::new(meter_provider.clone()))
+            .init();
+        OtelGuard {
+            tracer_provider: Some(tracer_provider),
+        }
+    } else {
+        partial.init();
+        OtelGuard {
+            tracer_provider: None,
+        }
     }
 }
 
 pub(crate) struct OtelGuard {
-    tracer_provider: TracerProvider,
-    meter_provider: SdkMeterProvider,
+    tracer_provider: Option<TracerProvider>,
+    // meter_provider: SdkMeterProvider,
 }
 
 impl Drop for OtelGuard {
     fn drop(&mut self) {
-        if let Err(err) = self.tracer_provider.shutdown() {
-            eprintln!("{err:?}");
+        if let Some(tracer_provider) = &mut self.tracer_provider {
+            if let Err(err) = tracer_provider.shutdown() {
+                eprintln!("{err:?}");
+            }
         }
-        if let Err(err) = self.meter_provider.shutdown() {
-            eprintln!("{err:?}");
-        }
+        // if let Err(err) = self.meter_provider.shutdown() {
+        //     eprintln!("{err:?}");
+        // }
     }
 }

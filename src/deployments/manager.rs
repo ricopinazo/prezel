@@ -1,18 +1,22 @@
-use std::{backtrace::Backtrace, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use futures::{stream, StreamExt};
-use tokio::sync::{RwLock, RwLockReadGuard};
+use tokio::sync::RwLock;
 
 use crate::{
-    container::Container, db::Db, github::Github, label::Label, sqlite_db::SqliteDbSetup,
-    time::now, tls::CertificateStore,
+    container::Container,
+    db::{nano_id::NanoId, Db},
+    github::Github,
+    label::Label,
+    sqlite_db::SqliteDbSetup,
+    tls::CertificateStore,
 };
 
 use super::{
     deployment::Deployment,
     map::DeploymentMap,
     worker::{Worker, WorkerHandle},
-    workers::{build::BuildWorker, docker::DockerWorker, github::GithubWorker},
+    workers::{build::BuildWorker, docker::DockerWorker, files::FilesWorker, github::GithubWorker},
 };
 
 #[derive(Clone, Debug)]
@@ -22,6 +26,7 @@ pub(crate) struct Manager {
     build_worker: Arc<WorkerHandle>,
     github_worker: Arc<WorkerHandle>,
     docker_worker: Arc<WorkerHandle>,
+    files_worker: Arc<WorkerHandle>,
     db: Db,
     github: Github,
 }
@@ -40,8 +45,6 @@ impl Manager {
         certificates: CertificateStore,
     ) -> Self {
         let deployments: Arc<_> = InstrumentedRwLock::new(DeploymentMap::new(certificates)).into();
-
-        // TODO: add docker or clean worker and trigger it at the end of the deployment worker flow
 
         let github_clone = github.clone();
         let db_clone = db.clone();
@@ -66,12 +69,19 @@ impl Manager {
         })
         .into();
 
+        let deployments_clone = deployments.clone();
+        let files_worker = FilesWorker::start(|_| FilesWorker {
+            map: deployments_clone,
+        })
+        .into();
+
         let manager = Self {
             deployments,
             box_domain,
             build_worker,
             github_worker,
             docker_worker,
+            files_worker,
             db,
             github,
         };
@@ -141,40 +151,32 @@ impl Manager {
     }
 
     #[tracing::instrument]
-    pub(crate) async fn get_deployment(&self, id: i64) -> Option<RwLockReadGuard<Deployment>> {
+    pub(crate) async fn get_deployment(&self, id: &NanoId) -> Option<Deployment> {
         let map = self.deployments.read().await;
-        RwLockReadGuard::try_map(map, |map| {
-            let (_, deployment) = map
-                .deployments
-                .iter()
-                .find(|(_, deployment)| deployment.id == id)?;
-            Some(deployment)
-        })
-        .ok()
+        map.deployments
+            .values()
+            .find(|deployment| &deployment.id == id)
+            .cloned()
     }
 
     #[tracing::instrument]
-    pub(crate) async fn get_prod_deployment(
-        &self,
-        project: i64,
-    ) -> Option<RwLockReadGuard<Deployment>> {
+    pub(crate) async fn get_prod_deployment(&self, project: &NanoId) -> Option<Deployment> {
         let map = self.deployments.read().await;
-        RwLockReadGuard::try_map(map, |map| {
-            let prod_id = map.prod.get(&project)?;
-            map.deployments.get(&(project, prod_id.to_owned()))
-        })
-        .ok()
+        let prod_id = map.prod.get(project)?;
+        map.deployments
+            .get(&(project.clone(), prod_id.to_owned()))
+            .cloned()
     }
 
     #[tracing::instrument]
-    pub(crate) async fn get_prod_db(&self, project: i64) -> Option<SqliteDbSetup> {
+    pub(crate) async fn get_prod_db(&self, project: &NanoId) -> Option<SqliteDbSetup> {
         self.deployments.read().await.get_prod_db(project)
     }
 
     #[tracing::instrument]
-    pub(crate) async fn get_prod_url_id(&self, project: i64) -> Option<String> {
+    pub(crate) async fn get_prod_url_id(&self, project: &NanoId) -> Option<String> {
         let map = self.deployments.read().await;
-        Some(map.prod.get(&project)?.to_owned())
+        Some(map.prod.get(project)?.to_owned())
     }
 
     #[tracing::instrument]
@@ -186,6 +188,7 @@ impl Manager {
             .await;
         self.build_worker.trigger();
         self.docker_worker.trigger();
+        self.files_worker.trigger();
     }
 
     /// this triggers all the sync workflows downstream

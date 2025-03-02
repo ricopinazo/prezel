@@ -1,5 +1,6 @@
 .git
 src.db
-target
-docs
-examples
+target/
+docs/
+examples/
+tests/

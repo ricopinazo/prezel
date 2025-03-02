@@ -1,18 +1,17 @@
-use tracing::error;
-
 use crate::{
     db::{Db, InsertDeployment, Project},
     deployments::worker::Worker,
     github::{Commit, Github},
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct GithubWorker {
     pub(crate) github: Github,
     pub(crate) db: Db,
 }
 
 impl Worker for GithubWorker {
+    #[tracing::instrument]
     fn work(&self) -> impl std::future::Future<Output = ()> + Send {
         async {
             for Project {
@@ -20,52 +19,32 @@ impl Worker for GithubWorker {
             } in self.db.get_projects().await
             {
                 let commit = get_default_branch_and_latest_commit(&self.github, repo_id).await;
-                match commit {
-                    Err(error) => {
-                        error!("Got error when trying to read from Github: {error}");
-                        error!("Cancelling run of github worker");
-                        break;
-                    }
-                    Ok((default_branch, commit)) => {
-                        if let Some(commit) = commit {
-                            // TODO: review, doesn't seem to make much sense that this is an Option
-                            let deployment = InsertDeployment {
-                                env: env.to_owned(),
-                                sha: commit.sha,
-                                timestamp: commit.timestamp,
-                                branch: default_branch,
-                                default_branch: 1, // TODO: abstract this as a bool
-                                project: id,
-                            };
-                            add_deployment_to_db_if_missing(&self.db, deployment).await;
-                        }
-                    }
+                if let Ok((default_branch, commit)) = commit {
+                    let deployment = InsertDeployment {
+                        env: env.to_owned(),
+                        sha: commit.sha,
+                        timestamp: commit.timestamp,
+                        branch: default_branch,
+                        default_branch: 1, // TODO: abstract this as a bool
+                        project: id.clone(),
+                    };
+                    add_deployment_to_db_if_missing(&self.db, deployment).await;
                 }
 
-                let pulls = self.github.get_open_pulls(repo_id).await.unwrap();
+                let pulls = self.github.get_open_pulls(repo_id).await.unwrap_or(vec![]);
                 for pull in pulls {
                     let branch = pull.head.ref_field;
                     // FIXME: some duplicated code in here as in above
-                    let commit = self.github.get_latest_commit(repo_id, &branch).await;
-                    match commit {
-                        Err(error) => {
-                            error!("Got error when trying to read from Github: {error}");
-                            error!("Cancelling run of github worker");
-                            break;
-                        }
-                        Ok(commit) => {
-                            if let Some(commit) = commit {
-                                let deployment = InsertDeployment {
-                                    env: env.to_owned(),
-                                    sha: commit.sha,
-                                    timestamp: commit.timestamp,
-                                    branch,
-                                    default_branch: 0, // TODO: abstract this as a bool
-                                    project: id,
-                                };
-                                add_deployment_to_db_if_missing(&self.db, deployment).await;
-                            }
-                        }
+                    if let Ok(commit) = self.github.get_latest_commit(repo_id, &branch).await {
+                        let deployment = InsertDeployment {
+                            env: env.to_owned(),
+                            sha: commit.sha,
+                            timestamp: commit.timestamp,
+                            branch,
+                            default_branch: 0, // TODO: abstract this as a bool
+                            project: id.clone(),
+                        };
+                        add_deployment_to_db_if_missing(&self.db, deployment).await;
                     }
                 }
             }
@@ -73,18 +52,20 @@ impl Worker for GithubWorker {
     }
 }
 
+#[tracing::instrument]
 async fn get_default_branch_and_latest_commit(
     github: &Github,
     repo_id: i64,
-) -> anyhow::Result<(String, Option<Commit>)> {
+) -> anyhow::Result<(String, Commit)> {
     let default_branch = github.get_default_branch(repo_id).await?;
     let commit = github.get_latest_commit(repo_id, &default_branch).await?;
     Ok((default_branch, commit))
 }
 
+#[tracing::instrument]
 async fn add_deployment_to_db_if_missing(db: &Db, deployment: InsertDeployment) {
     if !db
-        .hash_exists_for_project(&deployment.sha, deployment.project)
+        .hash_exists_for_project(&deployment.sha, &deployment.project)
         .await
     {
         db.insert_deployment(deployment).await

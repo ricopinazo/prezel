@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
-    "start": "pnpm migrate && next start",
+    "build": "pnpm migrate && next build",
+    "start": "next start",
     "lint": "next lint",
     "generate": "pnpm drizzle-kit generate",
     "migrate": "pnpm drizzle-kit migrate"
@@ -13,8 +13,8 @@
   "dependencies": {
     "@libsql/client": "^0.14.0",
     "dotenv": "^16.4.7",
-    "drizzle-orm": "^0.38.0",
-    "next": "15.0.4",
+    "drizzle-orm": "^0.40.0",
+    "next": "15.2.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
@@ -25,7 +25,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "drizzle-kit": "^0.30.0",
+    "drizzle-kit": "^0.30.5",
     "eslint": "^8",
     "eslint-config-next": "15.0.4",
     "postcss": "^8",

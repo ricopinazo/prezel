@@ -4,9 +4,6 @@ db:
 openapi-hash:
 	@sha1sum docs/public/openapi.json
 
-openapi-check:
-	test "$(shell make openapi-hash)" = "$(shell make openapi > /dev/null 2> /dev/null && make openapi-hash)"
-
 openapi:
 	cp Cargo.toml /tmp/prezel-cargo.backup
 	echo '[[bin]]' >> Cargo.toml
@@ -17,3 +14,6 @@ openapi:
 
 restore:
 	mv /tmp/prezel-cargo.backup Cargo.toml
+
+openapi-client: openapi
+	openapi-generator generate -i docs/public/openapi.json -g rust -o ./client

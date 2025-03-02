@@ -8,26 +8,27 @@ use tls::CertificateStore;
 use traces::init_tracing_subscriber;
 use tracing::info;
 
-mod alphabet;
 mod api;
 mod conf;
 mod container;
 mod db;
-mod deployment_hooks;
 mod deployments;
 mod docker;
 mod docker_bridge;
 mod env;
 mod github;
+mod hooks;
 mod label;
 mod listener;
 mod logging;
 mod paths;
+mod provider;
 mod proxy;
 mod sqlite_db;
-mod time;
 mod tls;
+mod tokens;
 mod traces;
+mod utils;
 
 pub(crate) const DOCKER_PORT: u16 = 5046;
 
@@ -47,17 +48,6 @@ pub(crate) const DOCKER_PORT: u16 = 5046;
 async fn main() {
     let _guard = init_tracing_subscriber();
     info!("prezel is starting...");
-
-    // old tracing conf
-    /////////////////////////////////////////////////////////////////
-    // let stdout_layer = tracing_subscriber::fmt::layer()
-    //     .pretty()
-    //     .with_writer(std::io::stdout)
-    //     .with_filter(EnvFilter::new("info")); // TODO: read from env
-    // tracing_subscriber::registry()
-    //     .with(stdout_layer)
-    //     .init();
-    /////////////////////////////////////////////////////////////////
 
     let conf = Conf::read();
     let cloned_conf = conf.clone();
@@ -79,7 +69,7 @@ async fn main() {
     manager.full_sync_with_github().await;
 
     let api_hostname = format!("api.{}", &conf.hostname);
-    run_api_server(manager, db, github, &api_hostname, conf.coordinator)
+    run_api_server(manager, db, github, &api_hostname, conf.secret)
         .await
         .unwrap();
 }

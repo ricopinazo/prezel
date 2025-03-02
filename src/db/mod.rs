@@ -1,6 +1,7 @@
 use std::{collections::HashMap, ops::Deref, sync::Arc};
 
 use futures::{stream, StreamExt};
+use nano_id::{MaybeNanoId, NanoId};
 use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
 use sqlx::{sqlite::SqlitePool, FromRow, Pool, Sqlite};
@@ -8,14 +9,12 @@ use tracing::info;
 use utoipa::ToSchema;
 
 use crate::{
-    alphabet,
+    label::Label,
     paths::get_instance_db_path,
-    time::{self, now},
+    utils::{now, PlusHttps, LOWERCASE_PLUS_NUMBERS},
 };
 
-struct WithId {
-    id: i64,
-}
+pub(crate) mod nano_id;
 
 #[derive(sqlx::Type, PartialEq, Clone, Copy, Debug)]
 #[sqlx(rename_all = "lowercase")]
@@ -26,12 +25,49 @@ pub(crate) enum BuildResult {
 
 #[derive(Clone, Debug)]
 struct PlainProject {
-    pub(crate) id: i64,
+    pub(crate) id: NanoId,
     pub(crate) name: String,
     pub(crate) repo_id: i64,
     pub(crate) created: i64,
     pub(crate) root: String,
-    pub(crate) prod_id: Option<i64>,
+    pub(crate) prod_id: MaybeNanoId,
+}
+
+#[derive(FromRow, Debug)]
+struct PlainDeployment {
+    pub(crate) id: NanoId,
+    pub(crate) slug: String,
+    pub(crate) timestamp: i64,
+    pub(crate) created: i64,
+    pub(crate) sha: String,
+    pub(crate) branch: String, // I might need to have here a list of prs somehow
+    pub(crate) default_branch: i64,
+    pub(crate) result: Option<BuildResult>,
+    pub(crate) build_started: Option<i64>,
+    pub(crate) build_finished: Option<i64>,
+    pub(crate) project: NanoId,
+}
+
+#[derive(Debug)]
+pub(crate) struct Deployment {
+    pub(crate) id: NanoId,
+    pub(crate) url_id: String,
+    pub(crate) timestamp: i64,
+    pub(crate) created: i64,
+    pub(crate) sha: String,
+    pub(crate) branch: String, // I might need to have here a list of prs somehow
+    pub(crate) default_branch: i64,
+    pub(crate) result: Option<BuildResult>,
+    pub(crate) build_started: Option<i64>,
+    pub(crate) build_finished: Option<i64>,
+    pub(crate) project: NanoId,
+    pub(crate) env: Vec<EnvVar>,
+}
+
+impl Deployment {
+    pub(crate) fn is_default_branch(&self) -> bool {
+        self.default_branch != 0
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, ToSchema)]
@@ -49,13 +85,13 @@ pub(crate) struct EnvVar {
 
 #[derive(Clone, Debug)]
 pub(crate) struct Project {
-    pub(crate) id: i64,
+    pub(crate) id: NanoId,
     pub(crate) name: String,
     pub(crate) repo_id: i64,
     pub(crate) created: i64,
     pub(crate) env: Vec<EditedEnvVar>,
     pub(crate) root: String,
-    pub(crate) prod_id: Option<i64>,
+    pub(crate) prod_id: Option<NanoId>,
     pub(crate) custom_domains: Vec<String>,
 }
 
@@ -74,53 +110,57 @@ pub(crate) struct UpdateProject {
 }
 
 #[derive(FromRow)]
-struct PlainDeployment {
-    pub(crate) id: i64,
-    pub(crate) url_id: String,
-    pub(crate) timestamp: i64,
-    pub(crate) created: i64,
-    pub(crate) sha: String,
-    pub(crate) branch: String, // I might need to have here a list of prs somehow
-    pub(crate) default_branch: i64,
-    pub(crate) result: Option<BuildResult>,
-    pub(crate) build_started: Option<i64>,
-    pub(crate) build_finished: Option<i64>,
-    pub(crate) project: i64,
-}
-
-pub(crate) struct Deployment {
-    pub(crate) id: i64,
-    pub(crate) url_id: String,
-    pub(crate) timestamp: i64,
-    pub(crate) created: i64,
-    pub(crate) sha: String,
-    pub(crate) branch: String, // I might need to have here a list of prs somehow
-    pub(crate) default_branch: i64,
-    pub(crate) result: Option<BuildResult>,
-    pub(crate) build_started: Option<i64>,
-    pub(crate) build_finished: Option<i64>,
-    pub(crate) project: i64,
-    pub(crate) env: Vec<EnvVar>,
-}
-
-impl Deployment {
-    pub(crate) fn is_default_branch(&self) -> bool {
-        self.default_branch != 0
-    }
-}
-
-#[derive(FromRow)]
 pub(crate) struct BuildLog {
     pub(crate) id: i64,
     pub(crate) content: String,
     pub(crate) timestamp: i64,
     pub(crate) error: i64,
-    pub(crate) deployment: i64,
+    pub(crate) deployment: NanoId,
 }
 
+#[derive(Debug)]
 pub(crate) struct DeploymentWithProject {
     pub(crate) deployment: Deployment,
     pub(crate) project: Arc<Project>,
+}
+
+impl DeploymentWithProject {
+    pub(crate) fn get_app_base_url(&self, box_domain: &str) -> String {
+        Label::Deployment {
+            project: self.project.name.clone(),
+            deployment: self.url_id.to_string(),
+        }
+        .format_hostname(box_domain)
+        .plus_https()
+    }
+
+    pub(crate) fn get_prod_base_url(&self, box_domain: &str) -> String {
+        Label::Prod {
+            project: self.project.name.clone(),
+        }
+        .format_hostname(box_domain)
+        .plus_https()
+    }
+
+    // FIXME: this choice between prod or branch is disconnected from similar choices in other parts
+    // such as in the api where we get the token from the prod db or the branch db
+    // or in commit.rs where we do the same
+    pub(crate) fn get_libsql_url(&self, box_domain: &str) -> String {
+        if self.default_branch == 1 {
+            Label::ProdDb {
+                project: self.project.name.clone(),
+            }
+            .format_hostname(box_domain)
+            .plus_https()
+        } else {
+            Label::BranchDb {
+                project: self.project.name.clone(),
+                deployment: self.url_id.clone(),
+            }
+            .format_hostname(box_domain)
+            .plus_https()
+        }
+    }
 }
 
 impl Deref for DeploymentWithProject {
@@ -131,17 +171,18 @@ impl Deref for DeploymentWithProject {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct InsertDeployment {
     pub(crate) env: Vec<EditedEnvVar>,
     pub(crate) sha: String,
     pub(crate) timestamp: i64,
     pub(crate) branch: String,
     pub(crate) default_branch: i64,
-    pub(crate) project: i64,
+    pub(crate) project: NanoId,
 }
 
 fn create_deployment_url_id() -> String {
-    nanoid!(10, &alphabet::LOWERCASE_PLUS_NUMBERS)
+    nanoid!(10, &LOWERCASE_PLUS_NUMBERS)
 }
 
 #[derive(Clone, Debug)]
@@ -150,6 +191,7 @@ pub(crate) struct Db {
 }
 
 impl Db {
+    #[tracing::instrument]
     pub(crate) async fn setup() -> Self {
         let db_path = get_instance_db_path();
         let db_path_str = db_path.to_str().expect("Path to DB coud not be generated");
@@ -175,7 +217,8 @@ impl Db {
     }
 
     // TODO: try to make the manager have access only to the read methods in here
-    pub(crate) async fn get_project(&self, id: i64) -> Option<Project> {
+    #[tracing::instrument]
+    pub(crate) async fn get_project(&self, id: &NanoId) -> Option<Project> {
         let project = sqlx::query_as!(
             PlainProject,
             "select * from projects where projects.id = ?",
@@ -188,6 +231,7 @@ impl Db {
         Some(self.append_extra_project_info(project).await)
     }
 
+    #[tracing::instrument]
     pub(crate) async fn get_project_by_name(&self, name: &str) -> Option<Project> {
         let project = sqlx::query_as!(
             PlainProject,
@@ -200,6 +244,7 @@ impl Db {
         Some(self.append_extra_project_info(project).await)
     }
 
+    #[tracing::instrument]
     pub(crate) async fn get_projects(&self) -> Vec<Project> {
         let projects = sqlx::query_as!(PlainProject, "select * from projects")
             .fetch_all(&self.conn)
@@ -212,6 +257,7 @@ impl Db {
             .await
     }
 
+    #[tracing::instrument]
     async fn append_extra_project_info(&self, project: PlainProject) -> Project {
         let custom_domains = sqlx::query!("select * from domains where project = ?", project.id)
             .fetch_all(&self.conn)
@@ -236,11 +282,12 @@ impl Db {
             created: project.created,
             env,
             root: project.root,
-            prod_id: project.prod_id,
+            prod_id: project.prod_id.0,
             custom_domains,
         }
     }
 
+    #[tracing::instrument]
     pub(crate) async fn insert_project(
         &self,
         InsertProject {
@@ -251,9 +298,11 @@ impl Db {
         }: InsertProject,
     ) {
         // TODO: transform this into a tx
-        let created = time::now();
+        let id = NanoId::random();
+        let created = now();
         sqlx::query!(
-            "insert into projects (name, repo_id, created, root) values (?, ?, ?, ?)",
+            "insert into projects (id, name, repo_id, created, root) values (?, ?, ?, ?, ?)",
+            id,
             name,
             repo_id,
             created,
@@ -262,13 +311,14 @@ impl Db {
         .execute(&self.conn)
         .await
         .unwrap();
-        let edited = time::now();
+        let edited = now();
         for env in env {
             sqlx::query!(
-                "insert into env (name, value, edited) values (?, ?, ?)",
+                "insert into env (name, value, edited, project) values (?, ?, ?, ?)",
                 env.name,
                 env.value,
                 edited,
+                id,
             )
             .execute(&self.conn)
             .await
@@ -276,9 +326,10 @@ impl Db {
         }
     }
 
+    #[tracing::instrument]
     pub(crate) async fn update_project(
         &self,
-        id: i64,
+        id: &NanoId,
         UpdateProject {
             name,
             custom_domains,
@@ -311,15 +362,17 @@ impl Db {
         }
     }
 
-    pub(crate) async fn delete_project(&self, id: i64) {
+    #[tracing::instrument]
+    pub(crate) async fn delete_project(&self, id: &NanoId) {
         sqlx::query!("delete from projects where id = ?", id)
             .execute(&self.conn)
             .await
             .unwrap();
     }
 
-    pub(crate) async fn upsert_env(&self, project: i64, name: &str, value: &str) {
-        let edited = time::now();
+    #[tracing::instrument]
+    pub(crate) async fn upsert_env(&self, project: &NanoId, name: &str, value: &str) {
+        let edited = now();
         sqlx::query!(
             "insert into env (project, name, value, edited) values (?, ?, ?, ?) on conflict (name, project) do update set value=?, edited=?",
             project,
@@ -334,7 +387,8 @@ impl Db {
         .unwrap();
     }
 
-    pub(crate) async fn delete_env(&self, project: i64, name: &str) {
+    #[tracing::instrument]
+    pub(crate) async fn delete_env(&self, project: &NanoId, name: &str) {
         sqlx::query!(
             "delete from env where project = ? and name = ?",
             project,
@@ -345,10 +399,11 @@ impl Db {
         .unwrap();
     }
 
-    pub(crate) async fn get_deployment(&self, deployment: i64) -> Option<Deployment> {
+    #[tracing::instrument]
+    pub(crate) async fn get_deployment(&self, deployment: &NanoId) -> Option<Deployment> {
         let plain_deployment = sqlx::query_as!(
             PlainDeployment,
-            r#"select id, url_id, timestamp, created, sha, branch, default_branch, result as "result: BuildResult", build_started, build_finished,project from deployments where deployments.id = ?"#,
+            r#"select id, slug, timestamp, created, sha, branch, default_branch, result as "result: BuildResult", build_started, build_finished,project from deployments where deployments.id = ?"#,
             deployment
         )
         .fetch_optional(&self.conn)
@@ -359,10 +414,11 @@ impl Db {
     }
 
     // TODO: just return stream here?
+    #[tracing::instrument]
     pub(crate) async fn get_deployments(&self) -> Vec<Deployment> {
         let deployments = sqlx::query_as!(
             PlainDeployment,
-            r#"select id, url_id, timestamp, created, sha, branch, default_branch, result as "result: BuildResult", build_started, build_finished, project from deployments"#
+            r#"select id, slug, timestamp, created, sha, branch, default_branch, result as "result: BuildResult", build_started, build_finished, project from deployments"#
         )
         .fetch_all(&self.conn)
         .await
@@ -374,6 +430,7 @@ impl Db {
             .await
     }
 
+    #[tracing::instrument]
     async fn append_extra_deployment_info(&self, deployment: PlainDeployment) -> Deployment {
         let env = sqlx::query_as!(
             EnvVar,
@@ -386,7 +443,7 @@ impl Db {
 
         Deployment {
             id: deployment.id,
-            url_id: deployment.url_id,
+            url_id: deployment.slug,
             timestamp: deployment.timestamp,
             created: deployment.created,
             sha: deployment.sha,
@@ -400,7 +457,8 @@ impl Db {
         }
     }
 
-    pub(crate) async fn delete_deployment(&self, id: i64) {
+    #[tracing::instrument]
+    pub(crate) async fn delete_deployment(&self, id: &NanoId) {
         sqlx::query!("delete from deployments where id = ?", id)
             .execute(&self.conn)
             .await
@@ -408,39 +466,42 @@ impl Db {
     }
 
     // TODO: implement this using SQL
+    #[tracing::instrument]
     pub(crate) async fn get_latest_successful_prod_deployment_for_project(
         &self,
-        project: i64,
+        project: &NanoId,
     ) -> Option<Deployment> {
         let mut deployments: Vec<_> = self
             .get_deployments()
             .await
             .into_iter()
-            .filter(|deployment| deployment.project == project && deployment.is_default_branch())
+            .filter(|deployment| &deployment.project == project && deployment.is_default_branch())
             .filter(|deployment| deployment.result != Some(BuildResult::Failed))
             .collect();
         deployments.sort_by_key(|deployment| deployment.timestamp);
         deployments.pop()
     }
 
+    #[tracing::instrument]
     pub(crate) async fn get_deployment_with_project(
         &self,
-        deployment: i64,
+        deployment: &NanoId,
     ) -> Option<DeploymentWithProject> {
         let deployment = self.get_deployment(deployment).await?;
-        let project = self.get_project(deployment.project).await?;
+        let project = self.get_project(&deployment.project).await?;
         Some(DeploymentWithProject {
             project: project.into(),
             deployment,
         })
     }
 
+    #[tracing::instrument]
     pub(crate) async fn get_deployments_with_project(
         &self,
     ) -> impl Iterator<Item = DeploymentWithProject> {
         let project_iter = self.get_projects().await.into_iter();
         let projects: HashMap<_, Arc<_>> = project_iter
-            .map(|project| (project.id, project.into()))
+            .map(|project| (project.id.clone(), project.into()))
             .collect();
         self.get_deployments()
             .await
@@ -453,12 +514,14 @@ impl Db {
             })
     }
 
+    #[tracing::instrument]
     pub(crate) async fn insert_deployment(&self, deployment: InsertDeployment) {
-        let created = time::now();
+        let created = now();
+        let id = NanoId::random();
         let url_id = create_deployment_url_id();
-        let WithId { id } = sqlx::query_as!(
-            WithId,
-            "insert into deployments (url_id, timestamp, created, sha, branch, default_branch, project) values (?, ?, ?, ?, ?, ?, ?) returning id",
+        sqlx::query!(
+            "insert into deployments (id, slug, timestamp, created, sha, branch, default_branch, project) values (?, ?, ?, ?, ?, ?, ?, ?)",
+            id,
             url_id,
             deployment.timestamp,
             created,
@@ -467,7 +530,7 @@ impl Db {
             deployment.default_branch,
             deployment.project
         )
-        .fetch_one(&self.conn)
+        .execute(&self.conn)
         .await
         .unwrap();
 
@@ -484,14 +547,16 @@ impl Db {
         }
     }
 
-    pub(crate) async fn update_deployment_result(&self, id: i64, status: BuildResult) {
+    #[tracing::instrument]
+    pub(crate) async fn update_deployment_result(&self, id: &NanoId, status: BuildResult) {
         sqlx::query!("update deployments set result = ? where id = ?", status, id)
             .execute(&self.conn)
             .await
             .unwrap();
     }
 
-    pub(crate) async fn update_deployment_build_start(&self, id: i64, build_started: i64) {
+    #[tracing::instrument]
+    pub(crate) async fn update_deployment_build_start(&self, id: &NanoId, build_started: i64) {
         sqlx::query!(
             "update deployments set build_started = ? where id = ?",
             build_started,
@@ -502,7 +567,8 @@ impl Db {
         .unwrap();
     }
 
-    pub(crate) async fn update_deployment_build_end(&self, id: i64, build_finished: i64) {
+    #[tracing::instrument]
+    pub(crate) async fn update_deployment_build_end(&self, id: &NanoId, build_finished: i64) {
         sqlx::query!(
             "update deployments set build_finished = ? where id = ?",
             build_finished,
@@ -513,7 +579,8 @@ impl Db {
         .unwrap();
     }
 
-    pub(crate) async fn reset_deployment_build_end(&self, id: i64) {
+    #[tracing::instrument]
+    pub(crate) async fn reset_deployment_build_end(&self, id: &NanoId) {
         sqlx::query!(
             "update deployments set build_finished = NULL where id = ?",
             id
@@ -523,7 +590,8 @@ impl Db {
         .unwrap();
     }
 
-    pub(crate) async fn get_deployment_build_logs(&self, deployment: i64) -> Vec<BuildLog> {
+    #[tracing::instrument]
+    pub(crate) async fn get_deployment_build_logs(&self, deployment: &NanoId) -> Vec<BuildLog> {
         sqlx::query_as!(
             BuildLog,
             r#"select * from build where build.deployment = ?"#,
@@ -534,9 +602,10 @@ impl Db {
         .unwrap()
     }
 
+    #[tracing::instrument]
     pub(crate) async fn insert_deployment_build_log(
         &self,
-        deployment: i64,
+        deployment: &NanoId,
         content: &str,
         error: bool,
     ) {
@@ -554,14 +623,16 @@ impl Db {
         .unwrap();
     }
 
-    pub(crate) async fn clear_deployment_build_logs(&self, deployment: i64) {
+    #[tracing::instrument]
+    pub(crate) async fn clear_deployment_build_logs(&self, deployment: &NanoId) {
         sqlx::query!("delete from build where build.deployment = ?", deployment)
             .execute(&self.conn)
             .await
             .unwrap();
     }
 
-    pub(crate) async fn hash_exists_for_project(&self, sha: &str, project: i64) -> bool {
+    #[tracing::instrument]
+    pub(crate) async fn hash_exists_for_project(&self, sha: &str, project: &NanoId) -> bool {
         sqlx::query!(
             "select id from deployments where deployments.sha=? and deployments.project=?",
             sha,

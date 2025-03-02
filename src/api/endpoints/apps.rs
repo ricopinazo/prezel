@@ -1,53 +1,46 @@
 use actix_web::{
     delete, get, patch, post,
     web::{Data, Json, Path},
-    HttpResponse, Responder,
+    HttpMessage, HttpRequest, HttpResponse, Responder,
 };
 use futures::future::join_all;
 
 use crate::{
     api::{
-        security::RequireApiKey,
+        bearer::{AdminRole, AnyRole},
         utils::{get_all_deployments, get_prod_deployment, get_prod_deployment_id},
         AppState, ErrorResponse, FullProjectInfo, ProjectInfo,
     },
-    db::{EnvVar, InsertProject, UpdateProject},
+    db::{nano_id::IntoOptString, EnvVar, InsertProject, UpdateProject},
+    tokens::TokenClaims,
 };
 
 /// Get projects
 #[utoipa::path(
     responses(
-        (status = 200, description = "Hello world", body = [ProjectInfo])
+        (status = 200, description = "Projets returned successfully", body = [ProjectInfo])
     ),
     security(
-        ("api_key" = [])
+        ("bearerAuth" = [])
     )
 )]
-#[get("/apps", wrap = "RequireApiKey")]
+#[get("/api/apps")]
 #[tracing::instrument]
-async fn get_projects(state: Data<AppState>) -> impl Responder {
+async fn get_projects(auth: AnyRole, state: Data<AppState>) -> impl Responder {
     let projects = state.db.get_projects().await;
+    let db_access = auth.0.role.get_db_access();
     let projects_with_deployments = projects.into_iter().map(|project| {
         let state = state.clone();
         async move {
-            let prod_deployment = get_prod_deployment(&state, project.id).await;
+            let prod_deployment = get_prod_deployment(&state, &project.id, db_access).await;
             let prod_deployment_id = get_prod_deployment_id(&state.db, &project).await;
-
-            // TODO: if the repo is not available, simply don't return that info
-            let repo = state
-                .github
-                .get_repo(project.repo_id)
-                .await
-                .unwrap()
-                .unwrap();
             ProjectInfo {
                 name: project.name.clone(),
-                id: project.id,
-                repo: repo.into(),
+                id: project.id.to_string(),
+                repo: project.repo_id,
                 created: project.created,
-                env: project.env,
                 custom_domains: project.custom_domains,
-                prod_deployment_id,
+                prod_deployment_id: prod_deployment_id.into_opt_string(),
                 prod_deployment,
             }
         }
@@ -59,39 +52,31 @@ async fn get_projects(state: Data<AppState>) -> impl Responder {
 /// Get project by name
 #[utoipa::path(
     responses(
-        (status = 200, description = "Hello world", body = FullProjectInfo),
+        (status = 200, description = "Projet returned successfully", body = FullProjectInfo),
         (status = 404, description = "Project not found", body = ErrorResponse)
     ),
     security(
-        ("api_key" = [])
+        ("bearerAuth" = [])
     )
 )]
-#[get("/apps/{name}", wrap = "RequireApiKey")]
+#[get("/api/apps/{name}")]
 #[tracing::instrument]
-async fn get_project(state: Data<AppState>, name: Path<String>) -> impl Responder {
+async fn get_project(auth: AnyRole, state: Data<AppState>, name: Path<String>) -> impl Responder {
     let name = name.into_inner();
     let project = state.db.get_project_by_name(&name).await;
+    let db_access = auth.0.role.get_db_access();
     match project {
         Some(project) => {
-            let repo = state
-                .github
-                .get_repo(project.repo_id)
-                .await
-                .unwrap()
-                .unwrap();
-
             let prod_deployment_id = get_prod_deployment_id(&state.db, &project).await;
-            let prod_deployment = get_prod_deployment(&state, project.id).await;
-            let deployments = get_all_deployments(&state, project.id).await;
-
+            let prod_deployment = get_prod_deployment(&state, &project.id, db_access).await;
+            let deployments = get_all_deployments(&state, &project.id, db_access).await;
             HttpResponse::Ok().json(FullProjectInfo {
                 name: project.name,
-                id: project.id,
-                repo: repo.into(),
+                id: project.id.into(),
+                repo: project.repo_id,
                 created: project.created,
-                env: project.env,
                 custom_domains: project.custom_domains,
-                prod_deployment_id,
+                prod_deployment_id: prod_deployment_id.into_opt_string(),
                 prod_deployment,
                 deployments,
             })
@@ -108,11 +93,16 @@ async fn get_project(state: Data<AppState>, name: Path<String>) -> impl Responde
         (status = 400, description = "'api' is not a valid app name"),
     ),
     security(
-        ("api_key" = [])
+        ("bearerAuth" = [])
     )
 )]
-#[post("/apps", wrap = "RequireApiKey")] // TODO: return project when successfully inserted
-async fn create_project(project: Json<InsertProject>, state: Data<AppState>) -> impl Responder {
+#[post("/api/apps")] // TODO: return project when successfully inserted
+#[tracing::instrument]
+async fn create_project(
+    _auth: AdminRole,
+    project: Json<InsertProject>,
+    state: Data<AppState>,
+) -> impl Responder {
     if &project.name != "api" {
         state.db.insert_project(project.0).await;
         state.manager.full_sync_with_github().await;
@@ -130,17 +120,19 @@ async fn create_project(project: Json<InsertProject>, state: Data<AppState>) -> 
         // (status = 409, description = "Todo with id already exists", body = ErrorResponse, example = json!(ErrorResponse::Conflict(String::from("id = 1"))))
     ),
     security(
-        ("api_key" = [])
+        ("bearerAuth" = [])
     )
 )]
-#[patch("/apps/{id}", wrap = "RequireApiKey")]
+#[patch("/api/apps/{id}")]
 #[tracing::instrument]
 async fn update_project(
+    auth: AdminRole,
     project: Json<UpdateProject>,
     state: Data<AppState>,
-    id: Path<i64>,
+    id: Path<String>,
 ) -> impl Responder {
-    state.db.update_project(id.into_inner(), project.0).await;
+    let id = id.into_inner().into();
+    state.db.update_project(&id, project.0).await;
     state.manager.sync_with_db().await; // TODO: review if its fine not doing a full sync with github here
     HttpResponse::Ok()
 }
@@ -151,15 +143,41 @@ async fn update_project(
         (status = 200, description = "Project deleted successfully"),
     ),
     security(
-        ("api_key" = [])
+        ("bearerAuth" = [])
     )
 )]
-#[delete("/apps/{id}", wrap = "RequireApiKey")]
+#[delete("/api/apps/{id}")]
 #[tracing::instrument]
-async fn delete_project(state: Data<AppState>, id: Path<i64>) -> impl Responder {
-    state.db.delete_project(id.into_inner()).await;
+async fn delete_project(
+    auth: AdminRole,
+    req: HttpRequest,
+    state: Data<AppState>,
+    id: Path<String>,
+) -> impl Responder {
+    req.extensions().get::<TokenClaims>();
+    state.db.delete_project(&id.into_inner().into()).await;
     state.manager.sync_with_db().await;
     HttpResponse::Ok()
+}
+
+/// Get env
+#[utoipa::path(
+    responses(
+        (status = 200, description = "Env returned successfully", body = [EditedEnvVar]),
+        (status = 404, description = "Project not found", body = ErrorResponse)
+    ),
+    security(
+        ("bearerAuth" = [])
+    )
+)]
+#[get("/api/apps/{id}/env")]
+#[tracing::instrument]
+async fn get_env(auth: AdminRole, state: Data<AppState>, id: Path<String>) -> impl Responder {
+    let id = id.into_inner().into();
+    match state.db.get_project(&id).await {
+        Some(project) => HttpResponse::Ok().json(project.env),
+        None => HttpResponse::NotFound().json(ErrorResponse::NotFound(format!("id = {id}"))),
+    }
 }
 
 /// Upsert env
@@ -169,16 +187,19 @@ async fn delete_project(state: Data<AppState>, id: Path<i64>) -> impl Responder 
         (status = 200, description = "Env upserted successfully"),
     ),
     security(
-        ("api_key" = [])
+        ("bearerAuth" = [])
     )
 )]
-#[patch("/apps/{id}/env", wrap = "RequireApiKey")]
+#[patch("/api/apps/{id}/env")]
 #[tracing::instrument]
-async fn upsert_env(env: Json<EnvVar>, state: Data<AppState>, id: Path<i64>) -> impl Responder {
-    state
-        .db
-        .upsert_env(id.into_inner(), &env.0.name, &env.0.value)
-        .await;
+async fn upsert_env(
+    auth: AdminRole,
+    env: Json<EnvVar>,
+    state: Data<AppState>,
+    id: Path<String>,
+) -> impl Responder {
+    let id = id.into_inner().into();
+    state.db.upsert_env(&id, &env.0.name, &env.0.value).await;
     // state.manager.sync_with_db().await; // TODO: review if its fine not calling sync here
     HttpResponse::Ok()
 }
@@ -189,13 +210,17 @@ async fn upsert_env(env: Json<EnvVar>, state: Data<AppState>, id: Path<i64>) -> 
         (status = 200, description = "Env deleted successfully"),
     ),
     security(
-        ("api_key" = [])
+        ("bearerAuth" = [])
     )
 )]
-#[delete("/apps/{id}/env/{name}", wrap = "RequireApiKey")]
+#[delete("/api/apps/{id}/env/{name}")]
 #[tracing::instrument]
-async fn delete_env(state: Data<AppState>, path: Path<(i64, String)>) -> impl Responder {
-    state.db.delete_env(path.0, &path.1).await;
+async fn delete_env(
+    auth: AdminRole,
+    state: Data<AppState>,
+    path: Path<(String, String)>,
+) -> impl Responder {
+    state.db.delete_env(&(path.0.clone().into()), &path.1).await;
     // state.manager.sync_with_db().await; // TODO: review if its fine not calling sync here
     HttpResponse::Ok()
 }

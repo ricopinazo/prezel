@@ -9,17 +9,9 @@ use bollard::{
     errors::Error as DockerError,
     image::{BuildImageOptions, CreateImageOptions},
     secret::{BuildInfo, HostConfig},
-    Docker as BollardDoker,
+    Docker,
 };
 use chrono::{DateTime, Utc};
-// use docker_api::{
-//     // models::{EndpointSettings, NetworkingConfig, Volume},
-//     opts::{ContainerCreateOpts, NetworkCreateOpts, VolumeCreateOpts},
-//     Container,
-//     Docker,
-//     Image,
-//     Network,
-// };
 use futures::StreamExt;
 use hyper::body::Bytes;
 use nanoid::nanoid;
@@ -33,19 +25,29 @@ use std::{
 };
 use utoipa::ToSchema;
 
-use crate::{alphabet, env::EnvVars, paths::HostFile};
-
-// pub(crate) fn legacy_docker_client() -> Docker {
-//     Docker::unix("/var/run/docker.sock")
-// }
+use crate::{env::EnvVars, paths::HostFolder, utils::LOWERCASE_PLUS_NUMBERS};
 
 #[tracing::instrument]
-pub(crate) fn docker_client() -> BollardDoker {
-    BollardDoker::connect_with_unix_defaults().unwrap()
+pub(crate) fn docker_client() -> Docker {
+    Docker::connect_with_unix_defaults().unwrap()
 }
 
 const NETWORK_NAME: &'static str = "prezel";
 const CONTAINER_PREFIX: &'static str = "prezel-";
+
+// TPODO: move all of this into a different folder to enforce usage of the function to return the real name
+#[derive(Debug, Clone)]
+pub(crate) struct ImageName(String);
+impl ImageName {
+    fn to_docker_name(&self) -> String {
+        format!("{CONTAINER_PREFIX}{}", self.0)
+    }
+}
+impl From<String> for ImageName {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
 
 #[tracing::instrument]
 pub(crate) async fn get_bollard_container_ipv4(container_id: &str) -> Option<Ipv4Addr> {
@@ -118,6 +120,22 @@ fn parse_message(message: Bytes) -> Option<(i64, String)> {
     Some((millis, content.to_owned()))
 }
 
+pub(crate) async fn get_managed_image_id(name: &ImageName) -> Option<String> {
+    get_image_id(&name.to_docker_name()).await
+}
+
+pub(crate) async fn get_image_id(name: &str) -> Option<String> {
+    let docker = docker_client();
+    let image = docker.inspect_image(name).await;
+    image.ok()?.id
+}
+
+pub(crate) async fn get_prezel_image_version() -> Option<String> {
+    let docker = docker_client();
+    let container = docker.inspect_container("prezel", None).await.ok()?;
+    Some(container.config?.image?.replace("prezel/prezel:", ""))
+}
+
 pub(crate) async fn pull_image(image: &str) {
     let docker = docker_client();
     docker
@@ -133,11 +151,26 @@ pub(crate) async fn pull_image(image: &str) {
         .await;
 }
 
-// #[tracing::instrument]
-pub(crate) async fn create_container<'a, I: Iterator<Item = &'a HostFile>>(
+pub(crate) async fn create_container<'a, I: Iterator<Item = &'a HostFolder>>(
     image: String,
     env: EnvVars,
-    host_files: I,
+    host_folders: I,
+    command: Option<String>,
+) -> anyhow::Result<String> {
+    let binds = host_folders
+        .map(|file| {
+            let host = file.get_host_path().to_str().unwrap().to_owned();
+            let container = file.get_container_path().to_str().unwrap().to_owned();
+            format!("{host}:{container}")
+        })
+        .collect();
+    create_container_with_explicit_binds(image, env, binds, command).await
+}
+
+pub(crate) async fn create_container_with_explicit_binds(
+    image: String,
+    env: EnvVars,
+    binds: Vec<String>,
     command: Option<String>,
 ) -> anyhow::Result<String> {
     let entrypoint = command
@@ -145,14 +178,8 @@ pub(crate) async fn create_container<'a, I: Iterator<Item = &'a HostFile>>(
         .then(|| vec!["sh".to_owned(), "-c".to_owned()]);
     let cmd = command.map(|command| vec![command]);
     let docker = docker_client();
-    let binds = host_files
-        .map(|file| {
-            let host = file.get_host_folder().to_str().unwrap().to_owned();
-            let container = file.get_container_folder().to_str().unwrap().to_owned();
-            format!("{host}:{container}")
-        })
-        .collect();
-    let id = nanoid!(21, &alphabet::LOWERCASE_PLUS_NUMBERS);
+
+    let id = nanoid!(21, &LOWERCASE_PLUS_NUMBERS);
     let name = format!("{CONTAINER_PREFIX}{id}",);
     let response = docker
         .create_container::<String, _>(
@@ -189,11 +216,13 @@ pub(crate) async fn run_container(id: &str) -> Result<(), impl Error> {
 
 // #[tracing::instrument]
 pub(crate) async fn build_dockerfile<O: Future<Output = ()> + Send, F: FnMut(BuildInfo) -> O>(
+    name: ImageName,
     path: &Path,
     buildargs: EnvVars,
     process_chunk: &mut F,
 ) -> anyhow::Result<String> {
-    let image_name = nanoid!(21, &alphabet::LOWERCASE_PLUS_NUMBERS);
+    // let image_name = nanoid!(21, &alphabet::LOWERCASE_PLUS_NUMBERS);
+    let name = name.to_docker_name();
 
     let mut archive_builder = tar::Builder::new(Vec::new());
     archive_builder.append_dir_all(".", path).unwrap();
@@ -204,7 +233,7 @@ pub(crate) async fn build_dockerfile<O: Future<Output = ()> + Send, F: FnMut(Bui
     docker
         .build_image(
             BuildImageOptions {
-                t: image_name.clone(),
+                t: name.clone(),
                 buildargs: buildargs.into(),
                 rm: true,
                 forcerm: true, // rm intermediate containers even if the build fails
@@ -233,91 +262,9 @@ pub(crate) async fn build_dockerfile<O: Future<Output = ()> + Send, F: FnMut(Bui
         })
         .await;
 
-    let image = docker.inspect_image(&image_name).await?;
+    let image = docker.inspect_image(&name).await?;
     image.id.ok_or(anyhow!("Image not found"))
 }
-
-// #[derive(Debug, Clone)]
-// pub(crate) struct DockerBuilder {
-//     docker: BollardDoker,
-// }
-
-// impl DockerBuilder {
-//     pub(crate) async fn build_dockerfile<
-//         O: Future<Output = ()> + Send,
-//         F: FnMut(BuildInfo) -> O,
-//     >(
-//         &self,
-//         path: &Path,
-//         buildargs: EnvVars,
-//         process_chunk: &mut F,
-//     ) -> anyhow::Result<String> {
-//         let image_name = nanoid!(21, &alphabet::LOWERCASE_PLUS_NUMBERS);
-
-//         let mut archive_builder = tar::Builder::new(Vec::new());
-//         archive_builder.append_dir_all(".", path).unwrap();
-//         let tar_content = archive_builder.into_inner().unwrap();
-
-//         self.docker
-//             .build_image(
-//                 BuildImageOptions {
-//                     t: image_name.clone(),
-//                     buildargs: buildargs.into(),
-//                     rm: true,
-//                     forcerm: true, // rm intermediate containers even if the build fails
-//                     ..Default::default()
-//                 },
-//                 None,
-//                 Some(tar_content.into()),
-//             )
-//             .for_each(|chunk| {
-//                 let output: Pin<Box<dyn Future<Output = ()> + Send>> = match chunk {
-//                     // chunk.id // TODO: use this as the image id so I don't have to generate one?
-//                     //     // chunk.aux // or maybe this
-//                     Ok(chunk) => {
-//                         Box::pin(process_chunk(chunk))
-//                     }
-//                     Err(error) => {
-//                         if let DockerError::DockerStreamError { error } = error {
-//                             Box::pin(process_chunk(BuildInfo {
-//                                 error: Some(error),
-//                                 ..Default::default() // TODO: this is a bit hacky, is this really equivalent
-//                             }))
-//                         } else {
-//                             Box::pin(future::ready(()))
-//                         }
-//                     }
-//                 };
-//                 output
-//             })
-//             .await;
-
-//         let image = self.docker.inspect_image(&image_name).await?;
-//         image.id.ok_or(anyhow!("Image not found"))
-//     }
-// }
-
-// #[derive(Debug, Clone)]
-// pub(crate) struct Docker {
-//     builder: Arc<Mutex<DockerBuilder>>,
-//     docker: BollardDoker,
-// }
-
-// impl Default for Docker {
-//     fn default() -> Self {
-//         let docker = docker_client();
-//         Self {
-//             docker: docker.clone(),
-//             builder: Mutex::new(DockerBuilder { docker }).into(),
-//         }
-//     }
-// }
-
-// impl Docker {
-//     pub(crate) async fn aquire_builder<'a>(&'a self) -> MutexGuard<'a, DockerBuilder> {
-//         self.builder.lock().await
-//     }
-// }
 
 #[tracing::instrument]
 pub(crate) async fn stop_container(name: &str) -> anyhow::Result<()> {
@@ -360,32 +307,9 @@ pub(crate) async fn list_managed_container_ids() -> anyhow::Result<impl Iterator
         .filter_map(|summary| summary.id))
 }
 
-// pub(crate) async fn get_stats() -> anyhow::Result<String> {
-//     let docker = docker_client();
-
-//     let containers = docker
-//         .list_containers(Some(ListContainersOptions {
-//             // all: true, for the stats I guess I only want to see running containers
-//             ..Default::default()
-//         }))
-//         .await?
-//         .into_iter()
-//         .filter_map(|summary| summary.id)
-//         .collect::<Vec<_>>();
-
-//     docker.stats(container_name, options);
-
-//     // https://docs.docker.com/reference/api/engine/version/v1.47/#tag/System/operation/SystemDataUsage
-
-//     todo!()
-// }
-
 #[cfg(test)]
 mod docker_tests {
-    use crate::{
-        docker::{create_container, get_bollard_container_ipv4, run_container},
-        paths::HostFile,
-    };
+    use crate::docker::{create_container, get_bollard_container_ipv4, run_container};
 
     // #[tokio::test]
     // async fn test_list_containers() {
@@ -401,16 +325,16 @@ mod docker_tests {
         // let image = image.inspect().await?;
         // let image_id = image.id.ok_or(anyhow!("Image not found"));
 
-        let container = create_container(
-            "busybox".to_owned(),
-            Default::default(),
-            [].into_iter(),
-            None,
-        )
-        .await
-        .unwrap();
-        run_container(&container).await.unwrap();
-        let ip = get_bollard_container_ipv4(&container).await.unwrap();
+        // let id = create_container(
+        //     "busybox".to_owned(),
+        //     Default::default(),
+        //     [].into_iter(),
+        //     None,
+        // )
+        // .await
+        // .unwrap();
+        // run_container(&id).await.unwrap();
+        // let _ip = get_bollard_container_ipv4(&id).await.unwrap();
 
         // run_container("zen_wright").await.unwrap();
 

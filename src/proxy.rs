@@ -1,4 +1,3 @@
-use std::fs;
 use std::net::{Ipv4Addr, SocketAddrV4};
 
 use async_trait::async_trait;
@@ -20,11 +19,14 @@ use url::Url;
 
 use crate::api::API_PORT;
 use crate::conf::Conf;
+use crate::container::ContainerStatus;
+use crate::db::nano_id::NanoId;
 use crate::deployments::manager::Manager;
 use crate::listener::{Access, Listener};
 use crate::logging::{Level, RequestLog, RequestLogger};
-use crate::time::now;
 use crate::tls::{CertificateStore, TlsState};
+use crate::tokens::decode_auth_token;
+use crate::utils::now;
 
 struct ApiListener;
 
@@ -41,7 +43,7 @@ impl Listener for ApiListener {
 
 struct Peer {
     listener: Box<dyn Listener>,
-    deployment_id: Option<i64>,
+    deployment_id: Option<NanoId>,
 }
 
 impl<L: Listener + 'static> From<L> for Peer {
@@ -90,7 +92,11 @@ impl ProxyApp {
             .and_then(|cookie_header| {
                 Cookie::split_parse(cookie_header)
                     .filter_map(|cookie| cookie.ok())
-                    .find(|cookie| cookie.name() == hostname && cookie.value() == self.config.token)
+                    .find(|cookie| {
+                        cookie.name() == hostname
+                            && decode_auth_token(cookie.value(), &self.config.secret).is_ok()
+                        // TODO: make sure I validate any future exp field etc
+                    })
             })
             .is_some()
     }
@@ -98,7 +104,7 @@ impl ProxyApp {
 
 #[derive(Default)]
 struct RequestCtx {
-    deployment: Option<i64>,
+    deployment: Option<NanoId>,
     socket: Option<SocketAddrV4>,
 }
 
@@ -168,8 +174,8 @@ impl ProxyHttp for ProxyApp {
             let path = session.req_header().uri.path();
             let callback = Url::parse(&format!("https://{host}{path}")).unwrap();
 
-            let coordinator = &self.config.coordinator;
-            let mut redirect = Url::parse(&format!("{coordinator}/api/instance/auth")).unwrap();
+            let provider = &self.config.provider;
+            let mut redirect = Url::parse(&format!("{provider}/api/instance/auth")).unwrap();
             redirect
                 .query_pairs_mut()
                 .append_pair("callback", callback.as_str());
@@ -183,6 +189,7 @@ impl ProxyHttp for ProxyApp {
         }
     }
 
+    // TODO: try removing this and see if everything still works, including loading favicons in the console
     async fn response_filter(
         &self,
         session: &mut Session,
@@ -193,15 +200,14 @@ impl ProxyHttp for ProxyApp {
         Self::CTX: Send + Sync,
     {
         let origin = session.get_header(header::ORIGIN);
-        let console =
-            origin.is_some_and(|header| header.to_str().unwrap() == self.config.coordinator);
+        let console = origin.is_some_and(|header| header.to_str().unwrap() == self.config.provider);
 
         if console {
             upstream_response
-                .insert_header(
-                    header::ACCESS_CONTROL_ALLOW_ORIGIN,
-                    &self.config.coordinator,
-                )
+                .insert_header(header::ACCESS_CONTROL_ALLOW_ORIGIN, &self.config.provider)
+                .unwrap();
+            upstream_response
+                .insert_header(header::ACCESS_CONTROL_ALLOW_CREDENTIALS, "true")
                 .unwrap();
         }
         Ok(())
@@ -221,7 +227,7 @@ fn logging(session: &Session, ctx: &RequestCtx, logger: &RequestLogger) -> Optio
     let host = session.get_header(header::HOST)?.to_str().ok()?.to_owned();
     let path = session.req_header().uri.path().to_owned();
     let method = session.req_header().method.as_str().to_owned();
-    let deployment = ctx.deployment?;
+    let deployment = ctx.deployment.clone()?; // I could also add a header to the incoming request X-Prezel-Request-Id to identify the deployment
     let response = session.response_written()?;
 
     let level = if response.status.is_client_error() || response.status.is_server_error() {
@@ -324,7 +330,7 @@ pub(crate) fn run_proxy(manager: Manager, config: Conf, store: CertificateStore)
     // TODO: tls_settings.enable_h2();
 
     let cloned = store.clone();
-    tls_settings.set_servername_callback(move |ssl, alert| {
+    tls_settings.set_servername_callback(move |ssl, _alert| {
         let domain = ssl.servername(NameType::HOST_NAME);
         if let Some(domain) = domain {
             if let Some(TlsState::Ready(certificate)) = cloned.get_domain(domain) {

@@ -8,7 +8,7 @@ use futures::{stream, Stream, StreamExt};
 
 use crate::{
     container::{Container, ContainerStatus},
-    db::{BuildResult, Db},
+    db::{nano_id::NanoId, BuildResult, Db},
     github::Github,
     sqlite_db::{ProdSqliteDb, SqliteDbSetup},
     tls::CertificateStore,
@@ -18,15 +18,14 @@ use super::{deployment::Deployment, worker::WorkerHandle};
 
 #[derive(Debug)]
 pub(crate) struct DeploymentMap {
-    pub(crate) dbs: HashMap<i64, ProdSqliteDb>,
-    /// FIXME: this having a tuple (i64, String) as the key means every time I access I need to clone a String. There has to be another way
-    pub(crate) deployments: HashMap<(i64, String), Deployment>,
+    pub(crate) dbs: HashMap<NanoId, ProdSqliteDb>, // project id -> prod db
+    /// FIXME: this having a tuple (NanoId, String) as the key means every time I access I need to clone two strings. There has to be another way
+    pub(crate) deployments: HashMap<(NanoId, String), Deployment>, // project id + deployment slug -> deployment
     /// values here used to be options, but removing them from the map should be enough
-    pub(crate) prod: HashMap<i64, String>,
-    // pub(crate) ideal_prod: HashMap<i64, Option<String>>,
-    pub(crate) names: HashMap<String, i64>,
+    pub(crate) prod: HashMap<NanoId, String>, // project id -> deployment slug
+    pub(crate) names: HashMap<String, NanoId>, // project name -> project id
     pub(crate) certificates: CertificateStore,
-    pub(crate) custom_domains: HashMap<String, i64>,
+    pub(crate) custom_domains: HashMap<String, NanoId>, // domain -> project id
 }
 
 impl DeploymentMap {
@@ -41,6 +40,7 @@ impl DeploymentMap {
         }
     }
 
+    #[tracing::instrument]
     pub(crate) fn iter_containers(&self) -> impl Stream<Item = Arc<Container>> + Send + '_ {
         let prod_dbs = self.dbs.values().map(|db| db.setup.container.clone());
         let deployments = stream::iter(self.deployments.iter())
@@ -48,37 +48,52 @@ impl DeploymentMap {
         stream::iter(prod_dbs).chain(deployments)
     }
 
+    #[tracing::instrument]
     pub(crate) fn get_deployment(&self, project: &str, deployment: &str) -> Option<&Deployment> {
         let project_id = self.names.get(project)?;
-        self.deployments.get(&(*project_id, deployment.to_string()))
+        self.deployments
+            .get(&(project_id.clone(), deployment.to_string()))
     }
 
-    fn get_prod_from_id(&self, id: i64) -> Option<&Deployment> {
-        let prod_id = self.prod.get(&id)?;
-        self.deployments.get(&(id, prod_id.to_string()))
+    #[tracing::instrument]
+    pub(crate) fn has_deployment_id(&self, id: &NanoId) -> bool {
+        self.deployments
+            .values()
+            .any(|deployment| &deployment.id == id)
     }
 
+    #[tracing::instrument]
+    fn get_prod_from_id(&self, id: &NanoId) -> Option<&Deployment> {
+        let prod_id = self.prod.get(id)?;
+        self.deployments.get(&(id.clone(), prod_id.to_string()))
+    }
+
+    #[tracing::instrument]
     pub(crate) fn get_prod(&self, project: &str) -> Option<&Deployment> {
         let project_id = self.names.get(project)?;
-        self.get_prod_from_id(*project_id)
+        self.get_prod_from_id(project_id)
     }
 
-    pub(crate) fn get_prod_db(&self, id: i64) -> Option<SqliteDbSetup> {
-        self.dbs.get(&id).map(|db| db.setup.clone())
+    #[tracing::instrument]
+    pub(crate) fn get_prod_db(&self, id: &NanoId) -> Option<SqliteDbSetup> {
+        self.dbs.get(id).map(|db| db.setup.clone())
     }
 
+    #[tracing::instrument]
     pub(crate) fn get_prod_db_by_name(&self, project: &str) -> Option<SqliteDbSetup> {
         let id = self.names.get(project)?;
-        self.get_prod_db(*id)
+        self.get_prod_db(id)
     }
 
+    #[tracing::instrument]
     pub(crate) fn get_custom_domain(&self, domain: &str) -> Option<&Deployment> {
         let project = self.custom_domains.get(domain)?;
-        self.get_prod_from_id(*project)
+        self.get_prod_from_id(project)
     }
 
     // TODO: this is currently kind of a mutex because is getting &mut,
     // but if that ever changes, I might need a way to make it mutex again
+    #[tracing::instrument]
     pub(crate) async fn read_db_and_build_updates(
         &mut self,
         build_queue: &WorkerHandle,
@@ -89,17 +104,17 @@ impl DeploymentMap {
 
         let required_ids = required_deployments
             .iter()
-            .map(|dep| (dep.project.id, dep.deployment.url_id.clone()))
+            .map(|dep| (dep.project.id.clone(), dep.deployment.url_id.clone()))
             .collect::<HashSet<_>>();
 
         // sync map.names
         let projects = required_deployments
             .iter()
-            .map(|dep| (dep.project.id, dep.project.clone()))
+            .map(|dep| (dep.project.id.clone(), dep.project.clone()))
             .collect::<HashMap<_, _>>();
         self.names = projects
             .iter()
-            .map(|(id, project)| (project.name.clone(), *id))
+            .map(|(id, project)| (project.name.clone(), id.clone()))
             .collect();
 
         // sync map.custom_domains
@@ -109,17 +124,17 @@ impl DeploymentMap {
                 project
                     .custom_domains
                     .iter()
-                    .map(|domain| (domain.to_owned(), *id))
+                    .map(|domain| (domain.to_owned(), id.clone()))
             })
             .collect();
 
         // sync map.dbs
         for (project_id, _) in &projects {
-            if !self.dbs.contains_key(&project_id) {
+            if !self.dbs.contains_key(project_id) {
                 // TODO: remove unwrap
                 self.dbs.insert(
-                    *project_id,
-                    ProdSqliteDb::new(*project_id, build_queue.clone()).unwrap(),
+                    project_id.clone(),
+                    ProdSqliteDb::new(&project_id, build_queue.clone()).unwrap(),
                 );
             }
         }
@@ -135,11 +150,11 @@ impl DeploymentMap {
 
         // sync map.deployments
         for deployment in required_deployments {
-            if !self
-                .deployments
-                .contains_key(&(deployment.project.id, deployment.deployment.url_id.clone()))
-            {
-                let project = deployment.project.id;
+            if !self.deployments.contains_key(&(
+                deployment.project.id.clone(),
+                deployment.deployment.url_id.clone(),
+            )) {
+                let project = deployment.project.id.clone();
                 let url_id = deployment.deployment.url_id.clone();
                 if let Some(prod_db) = self.dbs.get(&project) {
                     let deployment = Deployment::new(
@@ -148,7 +163,8 @@ impl DeploymentMap {
                         github.clone(),
                         db.clone(),
                         prod_db,
-                    );
+                    )
+                    .await;
                     self.deployments.insert((project, url_id), deployment);
                 } else {
                     panic!("illegal state, no prod bd found for deployment"); // TODO: remove this panic, make it imposible
@@ -230,13 +246,10 @@ impl DeploymentMap {
         //     .collect()
         //     .await;
 
-        // force build and start for prod containers
+        // force build prod containers
         for deployment in self.iter_prod_deployments() {
             let status = deployment.app_container.status.read().await.clone();
             match status {
-                ContainerStatus::StandBy { .. } => {
-                    deployment.app_container.start().await;
-                }
                 // the logic to put containers into the queue is a bit duplicated.
                 // Maybe everything related to putting containers into the Queue should be here,
                 // but that means I need an additional status
@@ -253,6 +266,7 @@ impl DeploymentMap {
         }
     }
 
+    #[tracing::instrument]
     fn iter_prod_deployments(&self) -> impl Iterator<Item = &Deployment> {
         self.names
             .keys()
@@ -260,10 +274,11 @@ impl DeploymentMap {
     }
 
     // TODO: once I get this to be Send, change signature back to async fn ...
+    #[tracing::instrument]
     fn get_all_non_prod_containers(&self) -> impl Future<Output = Vec<Arc<Container>>> + Send + '_ {
         let prod_deployment_ids = self
             .iter_prod_deployments()
-            .map(|deployment| deployment.id)
+            .map(|deployment| deployment.id.clone())
             .collect::<Vec<_>>();
         let all_containers_from_non_prod_deployments = stream::iter(
             self.deployments

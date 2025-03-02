@@ -1,15 +1,10 @@
-use std::{
-    fs::{self, create_dir_all, File},
-    io,
-    path::{Path, PathBuf},
-};
+use std::{fs, path::Path};
 
-use anyhow::ensure;
 use futures::{stream, StreamExt};
 use openssl::asn1::Asn1Time;
 use pingora::tls;
 
-use crate::paths::get_container_root;
+use crate::paths::{get_domain_cert_path, get_domain_key_path, get_intermediate_domain_path};
 
 use super::now_in_seconds;
 
@@ -26,7 +21,8 @@ pub(super) fn read_pem_from_path(path: &Path) -> anyhow::Result<tls::x509::X509>
 }
 
 async fn get_intermediate_pem_path(url: &str) -> anyhow::Result<tls::x509::X509> {
-    let path = get_intermediate_path(url);
+    let intermediate_domain = url.replace("/", "").replace(":", "");
+    let path = get_intermediate_domain_path(&intermediate_domain);
     match read_pem_from_path(&path) {
         Ok(cert) => Ok(cert),
         Err(_) => {
@@ -41,10 +37,10 @@ async fn get_intermediate_pem_path(url: &str) -> anyhow::Result<tls::x509::X509>
 
 impl TlsCertificate {
     pub(crate) async fn load_from_disk(domain: String) -> anyhow::Result<Self> {
-        let key = get_key_path(&domain);
+        let key = get_domain_key_path(&domain);
         tls::pkey::PKey::private_key_from_pem(&fs::read(&key)?)?;
 
-        let cert = get_cert_path(&domain);
+        let cert = get_domain_cert_path(&domain);
         let cert_content = tls::x509::X509::from_pem(&fs::read(&cert)?)?;
         let info = cert_content.authority_info().unwrap();
         let uris = info
@@ -84,28 +80,9 @@ pub(crate) fn write_certificate_to_disk(
     cert: tls::x509::X509,
     key: tls::pkey::PKey<tls::pkey::Private>,
 ) -> anyhow::Result<()> {
-    fs::write(get_cert_path(domain), cert.to_pem()?)?;
-    fs::write(get_key_path(domain), key.private_key_to_pem_pkcs8()?)?;
+    fs::write(get_domain_cert_path(domain), cert.to_pem()?)?;
+    fs::write(get_domain_key_path(domain), key.private_key_to_pem_pkcs8()?)?;
     Ok(())
-}
-
-fn get_intermediate_path(uri: &str) -> PathBuf {
-    let filename = uri.replace("/", "").replace(":", "") + ".pem";
-    get_container_root().join("certs").join(&filename)
-}
-
-fn get_cert_path(domain: &str) -> PathBuf {
-    get_domain_path(domain).join("cert.pem")
-}
-
-fn get_key_path(domain: &str) -> PathBuf {
-    get_domain_path(domain).join("key.pem")
-}
-
-fn get_domain_path(domain: &str) -> PathBuf {
-    let path = get_container_root().join("certs").join(domain);
-    create_dir_all(&path).unwrap();
-    path
 }
 
 #[cfg(test)]
@@ -114,12 +91,12 @@ mod test_certificate {
 
     use pingora::tls;
 
-    use crate::tls::certificate::get_cert_path;
+    use crate::paths::get_domain_cert_path;
 
     #[test]
     fn test_cert() {
         let domain = "*.visible-centipede.018294.xyz";
-        let path = get_cert_path(&domain);
+        let path = get_domain_cert_path(&domain);
         let cert = tls::x509::X509::from_pem(&fs::read(&path).unwrap()).unwrap();
 
         for resp in cert.ocsp_responders().unwrap() {

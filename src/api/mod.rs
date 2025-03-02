@@ -1,4 +1,5 @@
 use actix_web::web::{Data, ServiceConfig};
+use endpoints::{apps, deployments, system, version};
 use octocrab::models::Repository as CrabRepository;
 use serde::Serialize;
 use utoipa::{OpenApi, ToSchema};
@@ -9,16 +10,14 @@ use crate::{
     },
     deployments::{deployment::Deployment, manager::Manager},
     github::Github,
-    label::Label,
     logging::{Level, Log},
-    sqlite_db::SqliteDbSetup,
+    sqlite_db::DbAccess,
+    utils::PlusHttps,
 };
 
-mod apps;
-mod deployments;
-mod security;
+mod bearer;
+mod endpoints;
 pub(crate) mod server;
-mod system;
 mod utils;
 
 pub(crate) const API_PORT: u16 = 5045;
@@ -27,13 +26,15 @@ pub(crate) const API_PORT: u16 = 5045;
 #[derive(OpenApi)]
 #[openapi(
     paths(
-        system::health,
-        system::get_system_logs,
+        version::get_version,
+        version::update_version,
+        system::get_logs,
         apps::get_projects,
         apps::get_project,
         apps::create_project,
         apps::update_project,
         apps::delete_project,
+        apps::get_env,
         apps::upsert_env,
         apps::delete_env,
         deployments::redeploy,
@@ -53,13 +54,15 @@ fn configure_service(store: Data<AppState>) -> impl FnOnce(&mut ServiceConfig) {
     |config: &mut ServiceConfig| {
         config
             .app_data(store)
-            .service(system::health)
-            .service(system::get_system_logs)
+            .service(version::get_version)
+            .service(version::update_version)
+            .service(system::get_logs)
             .service(apps::get_projects)
             .service(apps::get_project)
             .service(apps::create_project)
             .service(apps::update_project)
             .service(apps::delete_project)
+            .service(apps::get_env)
             .service(apps::upsert_env)
             .service(apps::delete_env)
             .service(deployments::redeploy)
@@ -77,6 +80,7 @@ pub(crate) struct AppState {
     pub(crate) db: Db,
     pub(crate) manager: Manager,
     pub(crate) github: Github,
+    pub(crate) secret: String,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -88,27 +92,6 @@ enum ErrorResponse {
     /// When todo endpoint was called without correct credentials
     Unauthorized(String),
 }
-
-// #[derive(Serialize, ToSchema)]
-// struct LogLine {
-//     log_type: String,
-//     content: String,
-// }
-
-// impl From<Line> for LogLine {
-//     fn from(value: Line) -> Self {
-//         match value {
-//             Line::Stdout(line) => Self {
-//                 log_type: "ok".to_owned(),
-//                 content: line,
-//             },
-//             Line::Stderr(line) => Self {
-//                 log_type: "error".to_owned(),
-//                 content: line,
-//             },
-//         }
-//     }
-// }
 
 #[derive(Debug, PartialEq, Clone, Copy, ToSchema, Serialize)]
 pub(crate) enum Status {
@@ -140,37 +123,10 @@ struct LibsqlDb {
     token: String,
 }
 
-impl LibsqlDb {
-    fn new(
-        db_setup: SqliteDbSetup,
-        deployment_url_id: Option<String>,
-        box_domain: &str,
-        project_name: &str,
-    ) -> Self {
-        let url = if let Some(url_id) = deployment_url_id {
-            Label::BranchDb {
-                project: project_name.to_string(),
-                deployment: url_id,
-            }
-        } else {
-            Label::ProdDb {
-                project: project_name.to_string(),
-            }
-        }
-        .format_hostname(box_domain)
-        .plus_https();
-
-        Self {
-            url,
-            token: db_setup.auth.token,
-        }
-    }
-}
-
 #[derive(Serialize, ToSchema)]
 #[schema(title = "Deployment")]
 struct ApiDeployment {
-    id: i64,
+    id: String,
     url_id: String,
     // project: Project, // TODO: review why I needed this
     sha: String,
@@ -191,43 +147,47 @@ struct ApiDeployment {
 // TODO: move this somewhere else
 impl ApiDeployment {
     // TODO: make info an option so deployments can show up in the API before the manager reads them
+    #[tracing::instrument]
     async fn from(
         deployment: Option<&Deployment>,
         db_deployment: &DeploymentWithProject,
         is_prod: bool,
         box_domain: &str,
         manager: &Manager,
+        access: DbAccess,
     ) -> Self {
         let (status, url, prod_url, custom_urls, app_container, libsql_db) =
             if let Some(deployment) = deployment {
-                let container_status = deployment.app_container.status.read().await;
+                let container_status = deployment.app_container.status.read().await.clone();
                 let status = container_status.to_status();
 
-                let project_name = &db_deployment.project.name;
-                let url = Some(deployment.get_app_hostname(box_domain, project_name)).plus_https();
-                let prod_url = is_prod
-                    .then_some(deployment.get_prod_hostname(box_domain, project_name))
-                    .plus_https();
+                let url = Some(db_deployment.get_app_base_url(box_domain));
+                let prod_url = is_prod.then_some(db_deployment.get_prod_base_url(box_domain));
                 let custom_urls = if is_prod {
-                    db_deployment.project.custom_domains.plus_https()
+                    db_deployment
+                        .project
+                        .custom_domains
+                        .iter()
+                        .map(|domain| domain.plus_https())
+                        .collect()
                 } else {
                     vec![]
                 };
 
                 let app_container = deployment.app_container.get_container_id().await;
 
+                let db_url = db_deployment.get_libsql_url(box_domain);
                 let libsql_db = if is_prod {
-                    let prod_db = manager.get_prod_db(deployment.project).await;
-                    prod_db.map(|setup| LibsqlDb::new(setup, None, box_domain, project_name))
+                    let prod_db = manager.get_prod_db(&deployment.project).await;
+                    prod_db.map(|setup| LibsqlDb {
+                        url: db_url,
+                        token: setup.auth.generate_expiring_token(access),
+                    })
                 } else {
                     let branch_db = container_status.get_db_setup();
-                    branch_db.map(|setup| {
-                        LibsqlDb::new(
-                            setup,
-                            Some(deployment.url_id.clone()),
-                            box_domain,
-                            project_name,
-                        )
+                    branch_db.map(|setup| LibsqlDb {
+                        url: db_url,
+                        token: setup.auth.generate_expiring_token(access),
                     })
                 };
 
@@ -244,7 +204,7 @@ impl ApiDeployment {
         // TODO: I should have a nested struct for the container related
         // info so it can be an option as a whole
         Self {
-            id: db_deployment.id,
+            id: db_deployment.id.to_string(),
             url_id: db_deployment.url_id.clone(),
             // project: value.deployment.project.clone(),// TODO: review why I needed this
             sha: db_deployment.sha.clone(),
@@ -262,27 +222,27 @@ impl ApiDeployment {
     }
 }
 
-trait PlusHttps {
-    fn plus_https(&self) -> Self;
-}
+// trait PlusHttps {
+//     fn plus_https(&self) -> Self;
+// }
 
-impl PlusHttps for String {
-    fn plus_https(&self) -> Self {
-        format!("https://{self}")
-    }
-}
+// impl PlusHttps for String {
+//     fn plus_https(&self) -> Self {
+//         format!("https://{self}")
+//     }
+// }
 
-impl PlusHttps for Option<String> {
-    fn plus_https(&self) -> Self {
-        self.as_ref().map(|hostname| hostname.plus_https())
-    }
-}
+// impl PlusHttps for Option<String> {
+//     fn plus_https(&self) -> Self {
+//         self.as_ref().map(|hostname| hostname.plus_https())
+//     }
+// }
 
-impl PlusHttps for Vec<String> {
-    fn plus_https(&self) -> Self {
-        self.iter().map(|hostname| hostname.plus_https()).collect()
-    }
-}
+// impl PlusHttps for Vec<String> {
+//     fn plus_https(&self) -> Self {
+//         self.iter().map(|hostname| hostname.plus_https()).collect()
+//     }
+// }
 
 #[derive(Serialize, ToSchema)]
 struct Repository {
@@ -308,24 +268,22 @@ impl From<CrabRepository> for Repository {
 #[derive(Serialize, ToSchema)]
 struct ProjectInfo {
     name: String,
-    id: i64,
-    repo: Repository,
+    id: String,
+    repo: i64,
     created: i64,
-    env: Vec<EditedEnvVar>,
     custom_domains: Vec<String>,
-    prod_deployment_id: Option<i64>,
+    prod_deployment_id: Option<String>,
     prod_deployment: Option<ApiDeployment>,
 }
 
 #[derive(Serialize, ToSchema)]
 struct FullProjectInfo {
     name: String,
-    id: i64,
-    repo: Repository,
+    id: String,
+    repo: i64,
     created: i64,
-    env: Vec<EditedEnvVar>,
     custom_domains: Vec<String>,
-    prod_deployment_id: Option<i64>,
+    prod_deployment_id: Option<String>,
     prod_deployment: Option<ApiDeployment>,
     /// All project deployments sorted by created datetime descending
     deployments: Vec<ApiDeployment>,
