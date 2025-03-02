@@ -56,6 +56,13 @@ impl DeploymentMap {
     }
 
     #[tracing::instrument]
+    pub(crate) fn has_deployment_id(&self, id: &NanoId) -> bool {
+        self.deployments
+            .values()
+            .any(|deployment| &deployment.id == id)
+    }
+
+    #[tracing::instrument]
     fn get_prod_from_id(&self, id: &NanoId) -> Option<&Deployment> {
         let prod_id = self.prod.get(id)?;
         self.deployments.get(&(id.clone(), prod_id.to_string()))

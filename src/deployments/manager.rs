@@ -16,7 +16,7 @@ use super::{
     deployment::Deployment,
     map::DeploymentMap,
     worker::{Worker, WorkerHandle},
-    workers::{build::BuildWorker, docker::DockerWorker, github::GithubWorker},
+    workers::{build::BuildWorker, docker::DockerWorker, files::FilesWorker, github::GithubWorker},
 };
 
 #[derive(Clone, Debug)]
@@ -26,6 +26,7 @@ pub(crate) struct Manager {
     build_worker: Arc<WorkerHandle>,
     github_worker: Arc<WorkerHandle>,
     docker_worker: Arc<WorkerHandle>,
+    files_worker: Arc<WorkerHandle>,
     db: Db,
     github: Github,
 }
@@ -44,8 +45,6 @@ impl Manager {
         certificates: CertificateStore,
     ) -> Self {
         let deployments: Arc<_> = InstrumentedRwLock::new(DeploymentMap::new(certificates)).into();
-
-        // TODO: add docker or clean worker and trigger it at the end of the deployment worker flow
 
         let github_clone = github.clone();
         let db_clone = db.clone();
@@ -70,12 +69,19 @@ impl Manager {
         })
         .into();
 
+        let deployments_clone = deployments.clone();
+        let files_worker = FilesWorker::start(|_| FilesWorker {
+            map: deployments_clone,
+        })
+        .into();
+
         let manager = Self {
             deployments,
             box_domain,
             build_worker,
             github_worker,
             docker_worker,
+            files_worker,
             db,
             github,
         };
@@ -182,6 +188,7 @@ impl Manager {
             .await;
         self.build_worker.trigger();
         self.docker_worker.trigger();
+        self.files_worker.trigger();
     }
 
     /// this triggers all the sync workflows downstream

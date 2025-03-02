@@ -21,7 +21,6 @@ use crate::{
 #[derive(Debug)]
 pub(crate) struct ProdSqliteDb {
     pub(crate) setup: SqliteDbSetup,
-    project_id: String,
     build_queue: WorkerHandle,
 }
 
@@ -45,14 +44,13 @@ impl ProdSqliteDb {
                 container,
                 auth,
             },
-            project_id: project_id.to_string(),
             build_queue,
         })
     }
 
     #[tracing::instrument]
     pub(crate) fn branch(&self, deployment_id: &NanoId) -> BranchSqliteDb {
-        let branch_folder = get_libsql_branch_dir(&self.project_id, deployment_id.as_str());
+        let branch_folder = get_libsql_branch_dir(deployment_id.as_str());
         let auth = SqldAuth::new();
         BranchSqliteDb {
             base_folder: self.setup.folder.clone(),

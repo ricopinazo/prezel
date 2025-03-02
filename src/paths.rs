@@ -1,6 +1,6 @@
 use std::{
     env,
-    fs::create_dir_all,
+    fs::{create_dir_all, read_dir},
     path::{Path, PathBuf},
 };
 
@@ -22,11 +22,11 @@ prezel
 ├── apps
 │    └── 6220587f-4888-4709-989e-95ac08056a5e
 │          ├── libsql -> this is the prod libsql db
-│          ├── postgres
-│          └── deployments
-│                └── 10c1b2a4-39f6-4144-8620-a11e56b3232c
-│                      ├── libsql -> this is a libsql branch
-│                      └── postgres
+│          └── postgres
+├── deployments
+│    └── 10c1b2a4-39f6-4144-8620-a11e56b3232c
+│          ├── libsql -> this is the branch libsql db, if any
+│          └── postgres
 
 */
 
@@ -69,8 +69,13 @@ pub(crate) fn get_domain_key_path(domain: &str) -> PathBuf {
     get_domain_path(domain).join("key.pem")
 }
 
+// TODO: make this return PathBuf ?
 fn get_apps_dir() -> HostFolder {
     HostFolder::new("apps".into())
+}
+
+pub(crate) fn get_all_app_dirs() -> impl Iterator<Item = PathBuf> {
+    iter_dir(&get_apps_dir().get_container_path())
 }
 
 pub(crate) fn get_app_dir(id: &str) -> HostFolder {
@@ -81,12 +86,30 @@ pub(crate) fn get_propd_libqsl_dir(id: &str) -> HostFolder {
     get_app_dir(id).join("libsql")
 }
 
-pub(crate) fn get_deployment_dir(app: &str, deployment: &str) -> HostFolder {
-    get_app_dir(app).join("deployments").join(deployment)
+// TODO: make this return PathBuf ?
+pub(crate) fn get_deployments_dir() -> HostFolder {
+    HostFolder::new("deployments".into())
 }
 
-pub(crate) fn get_libsql_branch_dir(app: &str, deployment: &str) -> HostFolder {
-    get_deployment_dir(app, deployment).join("libsql")
+pub(crate) fn get_deployment_dir(deployment: &str) -> HostFolder {
+    get_deployments_dir().join(deployment)
+}
+
+pub(crate) fn get_all_deployment_dirs() -> impl Iterator<Item = PathBuf> {
+    iter_dir(&get_deployments_dir().get_container_path())
+}
+
+pub(crate) fn get_libsql_branch_dir(deployment: &str) -> HostFolder {
+    get_deployment_dir(deployment).join("libsql")
+}
+
+fn iter_dir(path: &Path) -> impl Iterator<Item = PathBuf> {
+    let paths = read_dir(path)
+        .map(|paths| paths.collect::<Vec<_>>())
+        .unwrap_or(vec![]);
+    paths
+        .into_iter()
+        .filter_map(|entry| Some(entry.ok()?.path()))
 }
 
 #[derive(Debug, Clone)]

@@ -1,9 +1,8 @@
 use anyhow::{anyhow, bail};
 use async_trait::async_trait;
-use futures::{stream, StreamExt};
 use std::{
     fmt,
-    future::{self, Future},
+    future::Future,
     net::SocketAddrV4,
     ops::Deref,
     pin::Pin,
