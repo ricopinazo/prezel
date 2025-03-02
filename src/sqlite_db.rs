@@ -1,8 +1,4 @@
-use std::{
-    ops::Deref,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{ops::Deref, path::Path, sync::Arc};
 
 use anyhow::{anyhow, bail};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
@@ -17,7 +13,7 @@ use crate::{
     container::{sqld::SqldContainer, Container},
     db::nano_id::NanoId,
     deployments::worker::WorkerHandle,
-    paths::HostFolder,
+    paths::{get_libsql_branch_dir, get_propd_libqsl_dir, HostFolder},
     tokens::Role,
     utils::now_in_seconds,
 };
@@ -25,7 +21,7 @@ use crate::{
 #[derive(Debug)]
 pub(crate) struct ProdSqliteDb {
     pub(crate) setup: SqliteDbSetup,
-    project_folder: PathBuf,
+    project_id: String,
     build_queue: WorkerHandle,
 }
 
@@ -34,10 +30,7 @@ impl ProdSqliteDb {
     // someone is trying to access it. But this never happens for sqld containers...
     #[tracing::instrument]
     pub(crate) fn new(project_id: &NanoId, build_queue: WorkerHandle) -> anyhow::Result<Self> {
-        let project_folder = Path::new("sqlite").join(project_id.as_str());
-        let path = project_folder.join("main");
-        let folder = HostFolder::new(path);
-
+        let folder = get_propd_libqsl_dir(project_id.as_str());
         let auth = SqldAuth::new();
         let container = SqldContainer::new(
             folder.clone(),
@@ -52,15 +45,14 @@ impl ProdSqliteDb {
                 container,
                 auth,
             },
-            project_folder,
+            project_id: project_id.to_string(),
             build_queue,
         })
     }
 
     #[tracing::instrument]
     pub(crate) fn branch(&self, deployment_id: &NanoId) -> BranchSqliteDb {
-        let path = self.project_folder.join(deployment_id.as_str());
-        let branch_folder = HostFolder::new(path);
+        let branch_folder = get_libsql_branch_dir(&self.project_id, deployment_id.as_str());
         let auth = SqldAuth::new();
         BranchSqliteDb {
             base_folder: self.setup.folder.clone(),

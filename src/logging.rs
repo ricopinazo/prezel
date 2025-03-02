@@ -17,7 +17,7 @@ use utoipa::ToSchema;
 use crate::{
     db::{nano_id::NanoId, BuildLog},
     docker::{DockerLog, LogType},
-    paths::get_instance_log_dir,
+    paths::get_log_dir,
 };
 
 const LOG_FILE_PREFIX: &str = "log";
@@ -131,7 +131,7 @@ impl RequestLogger {
         let (sender, receiver) = mpsc::channel::<RequestLog>();
 
         let join_handle = thread::spawn(move || {
-            let file_path = get_instance_log_dir().join(LOG_FILE_PREFIX);
+            let file_path = get_log_dir().join(LOG_FILE_PREFIX);
             let mut log = FileRotate::new(
                 file_path,
                 AppendTimestamp::default(FileLimit::MaxFiles(10)),
@@ -182,7 +182,7 @@ impl Iterator for EventIter {
 pub(crate) fn read_request_event_logs() -> io::Result<impl Iterator<Item = Log>> {
     // TODO: accept window
 
-    let mut paths: Vec<_> = fs::read_dir(get_instance_log_dir())?
+    let mut paths: Vec<_> = fs::read_dir(get_log_dir())?
         .filter_map(|entry| Some(entry.ok()?))
         .collect();
 
