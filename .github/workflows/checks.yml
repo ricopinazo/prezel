@@ -22,7 +22,7 @@ jobs:
 
       # run a migration against db from main
       - uses: actions/checkout@v4
-      # - run: cargo sqlx migrate run --database-url=sqlite:/tmp/old-db
+      - run: cargo sqlx migrate run --database-url=sqlite:/tmp/old-db
 
       - uses: Swatinem/rust-cache@v2
         with:
