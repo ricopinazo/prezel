@@ -293,7 +293,11 @@ impl Container {
             let timeout = now() + 60 * 1000; // 60 seconds
             while !is_online(&socket.to_string()).await {
                 if now() > timeout {
-                    bail!("Container start timed out");
+                    let logs: String = get_container_execution_logs(&container)
+                        .await
+                        .map(|log| log.message)
+                        .collect();
+                    bail!("Container {container} start timed out. See the logs below:\n{logs}");
                 }
                 sleep(Duration::from_millis(200)).await;
             }
