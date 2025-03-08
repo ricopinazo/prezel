@@ -172,9 +172,9 @@ struct TokenBody {
 
 #[post("/api/instance/token")]
 async fn token(body: Json<TokenBody>) -> impl Responder {
-    let app_id: u64 = env::var("GITHUB_ID").unwrap().parse().unwrap();
+    let app_id: u64 = env::var("GH_ID").unwrap().parse().unwrap();
 
-    let key_json: String = env::var("GITHUB_APP_PRIVATE_KEY").unwrap();
+    let key_json: String = env::var("GH_APP_PRIVATE_KEY").unwrap();
     let key: Key = serde_json::from_str(&key_json).unwrap();
     let key = EncodingKey::from_rsa_pem(key.key.as_bytes()).unwrap();
 

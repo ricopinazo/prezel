@@ -403,7 +403,7 @@ impl Db {
     pub(crate) async fn get_deployment(&self, deployment: &NanoId) -> Option<Deployment> {
         let plain_deployment = sqlx::query_as!(
             PlainDeployment,
-            r#"select id, slug, timestamp, created, sha, branch, default_branch, result as "result: BuildResult", build_started, build_finished,project from deployments where deployments.id = ?"#,
+            r#"select id, slug, timestamp, created, sha, branch, default_branch, result as "result: BuildResult", build_started, build_finished,project from deployments where id = ? and deleted is null"#,
             deployment
         )
         .fetch_optional(&self.conn)
@@ -418,7 +418,7 @@ impl Db {
     pub(crate) async fn get_deployments(&self) -> Vec<Deployment> {
         let deployments = sqlx::query_as!(
             PlainDeployment,
-            r#"select id, slug, timestamp, created, sha, branch, default_branch, result as "result: BuildResult", build_started, build_finished, project from deployments"#
+            r#"select id, slug, timestamp, created, sha, branch, default_branch, result as "result: BuildResult", build_started, build_finished, project from deployments where deleted is null"#
         )
         .fetch_all(&self.conn)
         .await
@@ -459,7 +459,7 @@ impl Db {
 
     #[tracing::instrument]
     pub(crate) async fn delete_deployment(&self, id: &NanoId) {
-        sqlx::query!("delete from deployments where id = ?", id)
+        sqlx::query!("update deployments set deleted = 1 where id = ?", id)
             .execute(&self.conn)
             .await
             .unwrap();
