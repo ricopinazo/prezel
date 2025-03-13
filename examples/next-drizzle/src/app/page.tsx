@@ -48,7 +48,7 @@ export default async function Home() {
           branching setup out of the box. All you have to do to use it is
           pointing to{" "}
           <code className="rounded bg-gray-200 px-2 py-0.5 font-semibold dark:bg-white/[.06]">
-            PREZEL_DB_URL
+            PREZEL_LIBSQL_URL
           </code>
         </div>
         <p>Want to see Prezel DB in action? Give us a clap below!</p>
