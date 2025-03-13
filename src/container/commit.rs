@@ -66,6 +66,8 @@ impl CommitContainer {
         let default_env = [
             ("PREZEL_DB_URL", db_url),
             ("PREZEL_DB_AUTH_TOKEN", &token),
+            ("PREZEL_LIBSQL_URL", db_url),
+            ("PREZEL_LIBSQL_AUTH_TOKEN", &token),
             ("ASTRO_DB_REMOTE_URL", db_url),
             ("ASTRO_DB_APP_TOKEN", &token),
             ("HOST", "0.0.0.0"),

@@ -91,3 +91,7 @@ pub(crate) async fn clone_deployment(db: &Db, deployment_id: &NanoId) -> Option<
     db.insert_deployment(insert).await;
     Some(())
 }
+
+pub(super) fn is_app_name_valid(name: &str) -> bool {
+    name != "api" && !name.contains("--")
+}
