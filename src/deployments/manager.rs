@@ -1,6 +1,5 @@
 use std::{sync::Arc, time::Duration};
 
-use futures::{stream, StreamExt};
 use tokio::sync::RwLock;
 
 use crate::{
@@ -110,10 +109,8 @@ impl Manager {
         if let Some(container) = container {
             Some(container)
         } else {
-            let labels = Label::strip_from_domain(hostname, &self.box_domain).ok()?;
-            let containers =
-                stream::iter(labels).filter_map(|label| self.get_container_by_label(label));
-            Box::pin(containers).next().await
+            let label = Label::strip_from_domain(hostname, &self.box_domain).ok()?;
+            self.get_container_by_label(label).await
         }
     }
 

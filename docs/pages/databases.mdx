@@ -1,25 +1,24 @@
 # Databases
 
-Our go-to choice for app databases is Sqlite.
-You don't need to do anything to set up your app database.
-Every time you deploy an application, it will be ready for you.
-All you have to do is pointing to `PREZEL_DB_URL` to use it.
+Databases in Prezel require no configuration. All you have to do to get a database setup is pointing to their url.
+Prezel sets up a number of environment variables so you can point to them:
+- LibSQL:
+  - `PREZEL_LIBSQL_URL`
+  - `PREZEL_LIBSQL_AUTH_TOKEN`
+- Postgres (this is still a work in progress and will be available soon):
+  - `PREZEL_POSTGRES_URL`
+
+This means that if your app sends a request to `PREZEL_LIBSQL_URL`, a LibSQL database will be created for your app, as simple as this.
+Also, the same way as with app containers, database services scale to zero, which means that they will be stoped when idle and get back online when new requests arrive.
+Of course, the storage of the production database will be preserved.
 
 What's more, **database branching** is on by default.
 This means every time you create a preview deployment by raising a pull request on Github, your production database will be cloned.
 This way, you will be able to test your changes against your production database,
 while being completely safe because you are simply working with a clone.
 
-## Why Sqlite?
 
-The main reason is that an Sqlite database is just a file,
-which means there is no service overhead.
-This is of course not a possibility in other platforms like Vercel,
-where there is no access to a filesystem.
-But is is not the case for applications deployed in Prezel, where you can take full advantage of it.
+## Especial mention: Astro DB
 
-You may wonder if Sqlite really scales. The thruth is, it does! You can find more details [here](https://www.sqlite.org/whentouse.html).
-
-Besides, the ecosystem around Sqlite as grown notoriously in recent years.
-Recently, projects such as [libsql](https://github.com/tursodatabase/libsql) made possible to expose sqlite databases over the network.
-Prezel takes full advantage of this to give you remote access to your local databases.
+If you deploy an Astro app making use of Astro DB, this will be setup automatically with no extra configuration.
+Prezel will setup the env variables `ASTRO_DB_REMOTE_URL` and `ASTRO_DB_APP_TOKEN` appropriately.

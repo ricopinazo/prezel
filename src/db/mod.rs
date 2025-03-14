@@ -105,7 +105,7 @@ pub(crate) struct InsertProject {
 
 #[derive(Deserialize, Debug, ToSchema)]
 pub(crate) struct UpdateProject {
-    name: Option<String>,
+    pub(crate) name: Option<String>,
     custom_domains: Option<Vec<String>>,
 }
 

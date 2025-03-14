@@ -6,7 +6,7 @@ export default defineConfig({
   schema: "./src/db/schema.ts",
   dialect: "turso",
   dbCredentials: {
-    url: process.env.PREZEL_DB_URL!,
-    authToken: process.env.PREZEL_DB_AUTH_TOKEN,
+    url: process.env.PREZEL_LIBSQL_URL!,
+    authToken: process.env.PREZEL_LIBSQL_AUTH_TOKEN,
   },
 });

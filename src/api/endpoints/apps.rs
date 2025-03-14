@@ -8,7 +8,9 @@ use futures::future::join_all;
 use crate::{
     api::{
         bearer::{AdminRole, AnyRole},
-        utils::{get_all_deployments, get_prod_deployment, get_prod_deployment_id},
+        utils::{
+            get_all_deployments, get_prod_deployment, get_prod_deployment_id, is_app_name_valid,
+        },
         AppState, ErrorResponse, FullProjectInfo, ProjectInfo,
     },
     db::{nano_id::IntoOptString, EnvVar, InsertProject, UpdateProject},
@@ -90,7 +92,7 @@ async fn get_project(auth: AnyRole, state: Data<AppState>, name: Path<String>) -
     request_body = InsertProject,
     responses(
         (status = 201, description = "Project created successfully"),
-        (status = 400, description = "'api' is not a valid app name"),
+        (status = 400, description = "App name is not valid"),
     ),
     security(
         ("bearerAuth" = [])
@@ -103,7 +105,7 @@ async fn create_project(
     project: Json<InsertProject>,
     state: Data<AppState>,
 ) -> impl Responder {
-    if &project.name != "api" {
+    if is_app_name_valid(&project.name) {
         state.db.insert_project(project.0).await;
         state.manager.full_sync_with_github().await;
         HttpResponse::Ok()
@@ -117,6 +119,7 @@ async fn create_project(
     request_body = UpdateProject,
     responses(
         (status = 200, description = "Project updated successfully"),
+        (status = 400, description = "App name is not valid"),
         // (status = 409, description = "Todo with id already exists", body = ErrorResponse, example = json!(ErrorResponse::Conflict(String::from("id = 1"))))
     ),
     security(
@@ -131,10 +134,19 @@ async fn update_project(
     state: Data<AppState>,
     id: Path<String>,
 ) -> impl Responder {
-    let id = id.into_inner().into();
-    state.db.update_project(&id, project.0).await;
-    state.manager.sync_with_db().await; // TODO: review if its fine not doing a full sync with github here
-    HttpResponse::Ok()
+    let valid_name = project
+        .0
+        .name
+        .as_ref()
+        .is_none_or(|name| is_app_name_valid(name));
+    if valid_name {
+        let id = id.into_inner().into();
+        state.db.update_project(&id, project.0).await;
+        state.manager.sync_with_db().await; // TODO: review if its fine not doing a full sync with github here
+        HttpResponse::Ok()
+    } else {
+        HttpResponse::BadRequest()
+    }
 }
 
 /// Delete project

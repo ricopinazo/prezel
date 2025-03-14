@@ -4,8 +4,8 @@ import * as schema from "./schema";
 
 export const db = drizzle({
   connection: {
-    url: process.env.PREZEL_DB_URL!,
-    authToken: process.env.PREZEL_DB_AUTH_TOKEN,
+    url: process.env.PREZEL_LIBSQL_URL!,
+    authToken: process.env.PREZEL_LIBSQL_AUTH_TOKEN,
   },
   schema,
 });

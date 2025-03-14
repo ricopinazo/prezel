@@ -198,7 +198,11 @@ impl DeploymentMap {
             })
             .filter_map(|(id, project_deployments)| async move {
                 // TODO: bear in mind prod id saved in the db
-                let prod_id =
+                let latest_prod_id = project_deployments
+                    .iter()
+                    .max_by_key(|(_, created, _)| created)
+                    .map(|(_, _, slug)| slug.clone());
+                let latest_successful_prod_id =
                         stream::iter(project_deployments)
                             .filter(|(app_container, _, _)| {
                                 let app_container = app_container.clone();
@@ -214,7 +218,8 @@ impl DeploymentMap {
                                 }
                             })
                             .await
-                            .1?;
+                            .1;
+                let prod_id = latest_successful_prod_id.or(latest_prod_id)?;
                 Some((id, prod_id))
             })
             .collect()
