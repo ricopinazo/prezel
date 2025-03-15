@@ -195,9 +195,7 @@ fn get_comment_info(comment: &Comment, secret: &str) -> Option<GithubCommentInfo
     let body = comment.body.as_ref()?;
     let header = body.split("\n").next()?;
     let jwt = header.split("[prezel]: ").last()?;
-    let result = decode_token(jwt, secret, false);
-    dbg!(&result);
-    result.ok()
+    decode_token(jwt, secret, false).ok()
 }
 
 fn create_comment(info: GithubCommentInfo, secret: &str) -> String {
