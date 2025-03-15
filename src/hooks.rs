@@ -86,7 +86,7 @@ impl DeploymentHooks for StatusHooks {
     }
 }
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
+#[derive(Clone, Copy, Serialize, Deserialize, Debug)]
 enum Status {
     Building,
     Ready,
@@ -181,7 +181,7 @@ impl StatusHooks {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 struct GithubCommentApp {
     status: Status,
     provider_url: String,
@@ -193,9 +193,9 @@ type GithubCommentInfo = HashMap<String, GithubCommentApp>;
 
 fn get_comment_info(comment: &Comment, secret: &str) -> Option<GithubCommentInfo> {
     let body = comment.body.as_ref()?;
-    let header = body.split("/n").next()?;
+    let header = body.split("\n").next()?;
     let jwt = header.split("[prezel]: ").last()?;
-    decode_token(jwt, secret).ok()
+    decode_token(jwt, secret, false).ok()
 }
 
 fn create_comment(info: GithubCommentInfo, secret: &str) -> String {
