@@ -4,6 +4,12 @@ use reqwest::Response;
 
 use crate::conf::Conf;
 
+pub(crate) async fn setup_ip_address() -> anyhow::Result<Response> {
+    let conf = Conf::read_async().await;
+    let path = format!("/api/instance/ip/{}", conf.hostname);
+    query(&conf, Method::POST, &path, None).await
+}
+
 pub(crate) async fn get_team_name() -> anyhow::Result<String> {
     let conf = Conf::read_async().await;
     let path = format!("/api/instance/team/{}", conf.hostname);

@@ -32,18 +32,6 @@ mod utils;
 
 pub(crate) const DOCKER_PORT: u16 = 5046;
 
-// struct DeploymentFilter;
-
-// impl Filter<Registry> for DeploymentFilter {
-//     fn enabled(
-//         &self,
-//         meta: &tracing::Metadata<'_>,
-//         _ctx: &tracing_subscriber::layer::Context<'_, Registry>,
-//     ) -> bool {
-//         meta.fields().field("deployment").is_some() // TODO: rename this field to prezel?
-//     }
-// }
-
 #[tokio::main]
 async fn main() {
     let _guard = init_tracing_subscriber();
@@ -54,6 +42,8 @@ async fn main() {
 
     let db = Db::setup().await;
     let github = Github::new().await;
+
+    provider::setup_ip_address().await.unwrap();
 
     let certificates = CertificateStore::load(&conf).await;
     let manager = Manager::new(
