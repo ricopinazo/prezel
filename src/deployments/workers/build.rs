@@ -2,6 +2,7 @@ use std::{future::Future, sync::Arc};
 
 use futures::StreamExt;
 use rand::seq::SliceRandom;
+use tracing::error;
 
 use crate::{
     container::{Container, ContainerStatus},
@@ -29,7 +30,10 @@ impl Worker for BuildWorker {
         async {
             loop {
                 if let Some(container) = self.get_container_to_build().await {
-                    container.setup_as_standby().await;
+                    let result = container.setup_as_standby().await;
+                    if let Err(error) = result {
+                        error!("got error when setting up a container: {error}")
+                    }
 
                     // we call this because the container we just built might be promoted to be the prod one
                     self.map

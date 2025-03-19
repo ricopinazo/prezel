@@ -5,6 +5,7 @@ use std::{
     future::Future,
     net::SocketAddrV4,
     ops::Deref,
+    path::PathBuf,
     pin::{pin, Pin},
     sync::Arc,
     time::{Duration, Instant},
@@ -23,7 +24,6 @@ use crate::{
     env::EnvVars,
     hooks::DeploymentHooks,
     listener::{Access, Listener},
-    paths::HostFolder,
     sqlite_db::SqliteDbSetup,
     utils::now,
 };
@@ -35,7 +35,7 @@ pub(crate) mod sqld;
 pub(crate) struct ContainerConfig {
     pub(crate) env: EnvVars,
     pub(crate) pull: bool,
-    pub(crate) host_folders: Vec<HostFolder>,
+    pub(crate) host_folders: Vec<PathBuf>,
     pub(crate) command: Option<String>, // TODO: review if I am using this
     pub(crate) initial_status: ContainerStatus,
     pub(crate) result: Option<BuildResult>,

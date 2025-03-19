@@ -162,7 +162,7 @@ impl CommitContainer {
             env_vec.iter().map(String::as_str).collect(),
             &GeneratePlanOptions::default(),
             &DockerBuilderOptions {
-                out_dir: Some(inner_path.to_str().unwrap().to_owned()), // TODO: test what happens if I omit this ?
+                out_dir: Some(inner_path.display().to_string()), // TODO: test what happens if I omit this ?
                 // name: Some(name.clone()),
                 // print_dockerfile: false,
                 // quiet: false,

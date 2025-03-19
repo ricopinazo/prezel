@@ -1,5 +1,4 @@
 use std::{
-    env,
     fs::{create_dir_all, read_dir},
     path::{Path, PathBuf},
 };
@@ -31,23 +30,23 @@ prezel
 */
 
 pub(crate) fn get_config_path() -> PathBuf {
-    get_container_root().join("config.json")
+    get_root().join("config.json")
 }
 
 pub(crate) fn get_acme_account_path() -> PathBuf {
-    get_container_root().join("acme-account")
+    get_root().join("acme-account")
 }
 
 pub(crate) fn get_instance_db_path() -> PathBuf {
-    get_container_root().join("app.db")
+    get_root().join("app.db")
 }
 
 pub(crate) fn get_log_dir() -> PathBuf {
-    get_container_root().join("log")
+    get_root().join("log")
 }
 
 fn get_certs_dir() -> PathBuf {
-    get_container_root().join("certs")
+    get_root().join("certs")
 }
 
 pub(crate) fn get_intermediate_domain_path(intermediate_domain: &str) -> PathBuf {
@@ -70,37 +69,39 @@ pub(crate) fn get_domain_key_path(domain: &str) -> PathBuf {
 }
 
 // TODO: make this return PathBuf ?
-fn get_apps_dir() -> HostFolder {
-    HostFolder::new("apps".into())
+fn get_apps_dir() -> PathBuf {
+    get_root().join("apps").create_if_missing()
 }
 
 pub(crate) fn get_all_app_dirs() -> impl Iterator<Item = PathBuf> {
-    iter_dir(&get_apps_dir().get_container_path())
+    iter_dir(&get_apps_dir())
 }
 
-pub(crate) fn get_app_dir(id: &str) -> HostFolder {
+pub(crate) fn get_app_dir(id: &str) -> PathBuf {
     get_apps_dir().join(id)
 }
 
-pub(crate) fn get_propd_libqsl_dir(id: &str) -> HostFolder {
-    get_app_dir(id).join("libsql")
+pub(crate) fn get_propd_libqsl_dir(id: &str) -> PathBuf {
+    get_app_dir(id).join("libsql").create_if_missing()
 }
 
 // TODO: make this return PathBuf ?
-pub(crate) fn get_deployments_dir() -> HostFolder {
-    HostFolder::new("deployments".into())
+pub(crate) fn get_deployments_dir() -> PathBuf {
+    get_root().join("deployments").create_if_missing()
 }
 
-pub(crate) fn get_deployment_dir(deployment: &str) -> HostFolder {
+pub(crate) fn get_deployment_dir(deployment: &str) -> PathBuf {
     get_deployments_dir().join(deployment)
 }
 
 pub(crate) fn get_all_deployment_dirs() -> impl Iterator<Item = PathBuf> {
-    iter_dir(&get_deployments_dir().get_container_path())
+    iter_dir(&get_deployments_dir())
 }
 
-pub(crate) fn get_libsql_branch_dir(deployment: &str) -> HostFolder {
-    get_deployment_dir(deployment).join("libsql")
+pub(crate) fn get_libsql_branch_dir(deployment: &str) -> PathBuf {
+    get_deployment_dir(deployment)
+        .join("libsql")
+        .create_if_missing()
 }
 
 fn iter_dir(path: &Path) -> impl Iterator<Item = PathBuf> {
@@ -112,40 +113,19 @@ fn iter_dir(path: &Path) -> impl Iterator<Item = PathBuf> {
         .filter_map(|entry| Some(entry.ok()?.path()))
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct HostFolder {
-    relative_path: PathBuf,
+const ROOT: &'static str = "/opt/prezel";
+
+fn get_root() -> &'static Path {
+    Path::new(ROOT)
 }
 
-impl HostFolder {
-    pub(crate) fn new(relative_path: PathBuf) -> Self {
-        // TODO: panic if relative_folder_path is not relative
-        Self { relative_path }
-    }
-
-    pub(crate) fn get_host_path(&self) -> PathBuf {
-        get_host_root().join(&self.relative_path)
-    }
-
-    pub(crate) fn get_container_path(&self) -> PathBuf {
-        let path = get_container_root().join(&self.relative_path);
-        create_dir_all(&path).unwrap(); // TODO: is this good enough?
-        path
-    }
-
-    fn join(&self, path: &str) -> Self {
-        Self {
-            relative_path: self.relative_path.join(path),
-        }
-    }
+trait CreateIfMissing {
+    fn create_if_missing(self) -> Self;
 }
 
-fn get_host_root() -> PathBuf {
-    env::var("PREZEL_HOME").unwrap().into()
-}
-
-const CONTAINER_ROOT: &'static str = "/opt/prezel";
-
-fn get_container_root() -> &'static Path {
-    Path::new(CONTAINER_ROOT)
+impl CreateIfMissing for PathBuf {
+    fn create_if_missing(self) -> Self {
+        create_dir_all(&self).unwrap();
+        self
+    }
 }
