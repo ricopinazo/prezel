@@ -56,8 +56,8 @@ impl TlsCertificate {
         Ok(Self {
             domain,
             intermediates,
-            cert: cert.to_str().unwrap().to_owned(),
-            key: key.to_str().unwrap().to_owned(),
+            cert: cert.display().to_string(),
+            key: key.display().to_string(),
         })
     }
 

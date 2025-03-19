@@ -1,7 +1,6 @@
-use crate::{
-    deployments::worker::WorkerHandle, hooks::NoopHooks, paths::HostFolder,
-    sqlite_db::SqliteDbSetup,
-};
+use std::path::PathBuf;
+
+use crate::{deployments::worker::WorkerHandle, hooks::NoopHooks, sqlite_db::SqliteDbSetup};
 
 use super::{BuildResult, Container, ContainerConfig, ContainerSetup, ContainerStatus};
 
@@ -12,9 +11,9 @@ pub(crate) struct SqldContainer;
 
 impl SqldContainer {
     #[tracing::instrument]
-    pub(crate) fn new(db_folder: HostFolder, key: &str, build_queue: WorkerHandle) -> Container {
+    pub(crate) fn new(db_folder: PathBuf, key: &str, build_queue: WorkerHandle) -> Container {
         let builder = Self {};
-        let db_path = db_folder.get_container_path().display().to_string();
+        let db_path = db_folder.display().to_string();
         Container::new(
             builder,
             ContainerConfig {

@@ -20,12 +20,12 @@ use std::{
     error::Error,
     future::{self, Future},
     net::Ipv4Addr,
-    path::Path,
+    path::{Path, PathBuf},
     pin::Pin,
 };
 use utoipa::ToSchema;
 
-use crate::{env::EnvVars, paths::HostFolder, utils::LOWERCASE_PLUS_NUMBERS};
+use crate::{env::EnvVars, utils::LOWERCASE_PLUS_NUMBERS};
 
 #[tracing::instrument]
 pub(crate) fn docker_client() -> Docker {
@@ -151,17 +151,16 @@ pub(crate) async fn pull_image(image: &str) {
         .await;
 }
 
-pub(crate) async fn create_container<'a, I: Iterator<Item = &'a HostFolder>>(
+pub(crate) async fn create_container<'a, I: Iterator<Item = &'a PathBuf>>(
     image: String,
     env: EnvVars,
     host_folders: I,
     command: Option<String>,
 ) -> anyhow::Result<String> {
     let binds = host_folders
-        .map(|file| {
-            let host = file.get_host_path().to_str().unwrap().to_owned();
-            let container = file.get_container_path().to_str().unwrap().to_owned();
-            format!("{host}:{container}")
+        .map(|folder| {
+            let path = folder.display().to_string();
+            format!("{path}:{path}")
         })
         .collect();
     create_container_with_explicit_binds(image, env, binds, command).await

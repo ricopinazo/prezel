@@ -1,4 +1,8 @@
-use std::{ops::Deref, path::Path, sync::Arc};
+use std::{
+    ops::Deref,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use anyhow::{anyhow, bail};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
@@ -13,7 +17,7 @@ use crate::{
     container::{sqld::SqldContainer, Container},
     db::nano_id::NanoId,
     deployments::worker::WorkerHandle,
-    paths::{get_libsql_branch_dir, get_propd_libqsl_dir, HostFolder},
+    paths::{get_libsql_branch_dir, get_propd_libqsl_dir},
     tokens::Role,
     utils::now_in_seconds,
 };
@@ -63,8 +67,8 @@ impl ProdSqliteDb {
 
 #[derive(Debug, Clone)]
 pub(crate) struct BranchSqliteDb {
-    base_folder: HostFolder,
-    pub(crate) branch_folder: HostFolder,
+    base_folder: PathBuf,
+    pub(crate) branch_folder: PathBuf,
     build_queue: WorkerHandle,
     pub(crate) auth: SqldAuth,
 }
@@ -72,11 +76,7 @@ pub(crate) struct BranchSqliteDb {
 impl BranchSqliteDb {
     #[tracing::instrument]
     pub(crate) async fn setup(&self) -> anyhow::Result<SqliteDbSetup> {
-        recursive_copy(
-            &self.base_folder.get_container_path(),
-            &self.branch_folder.get_container_path(),
-        )
-        .await?;
+        recursive_copy(&self.base_folder, &self.branch_folder).await?;
         let container = SqldContainer::new(
             self.branch_folder.clone(),
             &self.auth.get_url_safe_key(),
@@ -93,7 +93,7 @@ impl BranchSqliteDb {
 
 #[derive(Debug, Clone)]
 pub(crate) struct SqliteDbSetup {
-    pub(crate) folder: HostFolder,
+    pub(crate) folder: PathBuf,
     pub(crate) container: Arc<Container>,
     pub(crate) auth: SqldAuth,
 }
@@ -190,7 +190,7 @@ async fn recursive_copy(from: &Path, to: &Path) -> anyhow::Result<()> {
             // we ignore errors expecting file creations to fail later on if something
             // maybe I should check the error is actually:File exists
             // or maybe check if the directory already exists, if not, create it
-            let _ = tokio::fs::create_dir(&new_path).await;
+            let _ = tokio::fs::create_dir_all(&new_path).await;
         } else if entry.file_type().is_file() {
             tokio::fs::copy(entry.path(), &new_path)
                 .await

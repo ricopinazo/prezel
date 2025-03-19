@@ -23,7 +23,7 @@ impl Conf {
 
     fn from_string(data: io::Result<String>) -> Self {
         let data = data.expect("Unable to find config.json");
-        serde_json::from_str(&data).expect("Invalid content for conf.json")
+        serde_json::from_str(&data).expect("Invalid content for config.json")
     }
 
     pub(crate) fn api_hostname(&self) -> String {

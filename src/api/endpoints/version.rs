@@ -65,7 +65,6 @@ async fn run_update_container(version: &str) -> anyhow::Result<()> {
     let create_template = r#"&& curl --unix-socket /var/run/docker.sock -H "Content-Type: application/json" -X POST \
         -d '{
               "Image": "$IMAGE",
-              "Env": ["PREZEL_HOME='$PREZEL_HOME'"],
               "ExposedPorts": {
                 "80/tcp": {},
                 "443/tcp": {}
@@ -76,7 +75,7 @@ async fn run_update_container(version: &str) -> anyhow::Result<()> {
                   "443/tcp": [{"HostPort": "443"}]
                 },
                 "Binds": [
-                  "'$PREZEL_HOME':'/opt/prezel'",
+                  "/opt/prezel:/opt/prezel",
                   "/var/run/docker.sock:/var/run/docker.sock"
                 ],
                 "NetworkMode": "prezel",
@@ -86,9 +85,7 @@ async fn run_update_container(version: &str) -> anyhow::Result<()> {
               }
             }' \
         http://localhost/containers/create?name=prezel"#;
-    let create = create_template
-        .replace("$PREZEL_HOME", &env::var("PREZEL_HOME").unwrap())
-        .replace("$IMAGE", &image);
+    let create = create_template.replace("$IMAGE", &image);
     let command = [
         "curl --unix-socket /var/run/docker.sock -X POST http://localhost/containers/prezel/stop",
         "&& curl --unix-socket /var/run/docker.sock -X DELETE http://localhost/containers/prezel",
