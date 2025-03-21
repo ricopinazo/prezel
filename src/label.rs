@@ -53,7 +53,7 @@ fn parse_label(label: &str) -> Option<Label> {
                 project: project.to_string(),
                 deployment: deployment.to_string(),
             }),
-            [deployment, "libsql"] => Some(Label::Deployment {
+            [deployment, "libsql"] => Some(Label::BranchDb {
                 project: project.to_string(),
                 deployment: deployment.to_string(),
             }),
