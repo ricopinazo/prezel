@@ -35,7 +35,7 @@ impl SqldContainer {
             },
             build_queue,
             None,
-            true, // FIXME: make sure I handle auth at the
+            true,
             NoopHooks,
         )
     }

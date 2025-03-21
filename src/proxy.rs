@@ -19,7 +19,6 @@ use url::Url;
 
 use crate::api::API_PORT;
 use crate::conf::Conf;
-use crate::container::ContainerStatus;
 use crate::db::nano_id::NanoId;
 use crate::deployments::manager::Manager;
 use crate::listener::{Access, Listener};
