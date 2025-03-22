@@ -1,6 +1,7 @@
 use anyhow::ensure;
 use http::Method;
 use reqwest::Response;
+use serde_json::json;
 
 use crate::conf::Conf;
 
@@ -20,7 +21,8 @@ pub(crate) async fn get_team_name() -> anyhow::Result<String> {
 pub(crate) async fn post_challenge_response(response: String) -> anyhow::Result<Response> {
     let conf = Conf::read_async().await;
     let path = format!("/api/instance/dns/{}", conf.hostname);
-    query(&conf, Method::POST, &path, Some(response)).await
+    let body = json!(response).to_string();
+    query(&conf, Method::POST, &path, Some(body)).await
 }
 
 pub(crate) async fn is_dns_ready() -> anyhow::Result<bool> {
