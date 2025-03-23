@@ -163,16 +163,16 @@ impl CommitContainer {
             &GeneratePlanOptions::default(),
             &DockerBuilderOptions {
                 out_dir: Some(inner_path.display().to_string()), // TODO: test what happens if I omit this ?
+                // quiet: true,
+                // verbose: false,
                 // name: Some(name.clone()),
                 // print_dockerfile: false,
-                // quiet: false,
                 // cache_key: None,
                 // no_cache: true,
                 // inline_cache: false,
                 // platform: vec![],
                 // current_dir: true,
                 // no_error_without_start: true,
-                // verbose: true,
                 // docker_host: Some("unix:///var/run/docker.sock".to_owned()),
                 ..Default::default()
             },

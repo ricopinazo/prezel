@@ -6,7 +6,7 @@ use actix_web::{
 
 use crate::{
     api::{
-        bearer::{AnyRole, AdminRole},
+        bearer::{AdminRole, AnyRole},
         utils::clone_deployment,
         AppState,
     },
@@ -129,7 +129,7 @@ async fn get_deployment_logs(
 #[get("/api/deployments/{id}/build")]
 #[tracing::instrument]
 async fn get_deployment_build_logs(
-    auth: AdminRole,
+    auth: AnyRole,
     state: Data<AppState>,
     id: Path<String>,
 ) -> impl Responder {
