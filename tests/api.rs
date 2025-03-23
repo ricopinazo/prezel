@@ -148,7 +148,7 @@ fn run_prezel_container() {
     assert!(status.success());
 
     let prezel_home = get_prezel_home();
-    let command = format!("docker run -p 80:80 -p 443:443 --name prezel -e PREZEL_HOME={prezel_home} -v {prezel_home}:/opt/prezel --network prezel -v /var/run/docker.sock:/var/run/docker.sock -d prezel/prezel:test");
+    let command = format!("docker run -p 80:80 -p 443:443 --name prezel -v /opt/prezel:/opt/prezel --network prezel -v /var/run/docker.sock:/var/run/docker.sock -d prezel/prezel:test");
     let status = Command::new("sh").arg("-c").arg(command).status().unwrap();
     assert!(status.success());
 }
